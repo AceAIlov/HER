@@ -17,7 +17,7 @@
     "multer": "^1.4.5-lts.1",
     "node-fetch": "^3.3.2",
     "openai": "^4.55.3",
-    "vite": "^5.4.0"               // <-- moved here so Render always installs it
+    "vite": "^5.4.0"              
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
