@@ -5,6 +5,7 @@ let synth = window.speechSynthesis;
 let femaleVoice = null;
 let currentTranscript = '';
 let isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+let voicesLoaded = false;
 
 function initialize() {
     console.log('🎤 Initializing OS1...');
@@ -19,7 +20,6 @@ function initialize() {
         recognition.onresult = handleSpeechResult;
         recognition.onerror = (e) => {
             console.error('❌ Recognition error:', e.error);
-            // Auto-recover from common mobile errors
             if (e.error === 'not-allowed') {
                 alert('Please allow microphone access');
             }
@@ -31,58 +31,76 @@ function initialize() {
         return;
     }
 
-    // Load voices multiple times (important for mobile)
+    // Force load voices - critical for mobile
     loadVoices();
-    setTimeout(loadVoices, 100);
-    setTimeout(loadVoices, 500);
-    setTimeout(loadVoices, 1000);
-    setTimeout(loadVoices, 2000);
     
-    // Enable button and start intro
+    // Try multiple times as voices load async
+    const voiceInterval = setInterval(() => {
+        loadVoices();
+        if (voicesLoaded) {
+            clearInterval(voiceInterval);
+        }
+    }, 100);
+    
+    setTimeout(() => clearInterval(voiceInterval), 3000);
+    
+    // Enable button
     setTimeout(() => {
         document.getElementById('talkBtn').disabled = false;
-        console.log('✅ Button enabled');
-        
-        // On mobile, wait for user interaction before speaking
-        if (!isMobile) {
-            setTimeout(() => speakIntroduction(), 500);
-        } else {
-            console.log('📱 Waiting for user tap to start...');
-        }
+        console.log('✅ Button enabled - Tap to begin');
     }, 1500);
 }
 
 function loadVoices() {
     const voices = synth.getVoices();
-    console.log('🔊 Voices available:', voices.length);
     
-    if (voices.length > 0) {
-        // Better voice selection for mobile
-        femaleVoice = voices.find(v => v.name.includes('Samantha')) || // iOS
-                     voices.find(v => v.name.includes('Google US English Female')) || // Android
-                     voices.find(v => v.name.includes('Karen')) ||
-                     voices.find(v => v.name.includes('Female')) ||
-                     voices.find(v => v.lang === 'en-US') ||
-                     voices[0];
+    if (voices.length > 0 && !voicesLoaded) {
+        voicesLoaded = true;
+        console.log('🔊 Available voices:', voices.map(v => v.name + ' (' + v.lang + ')'));
         
-        console.log('✅ Voice:', femaleVoice?.name || 'Default');
+        // Priority order for best female voices
+        femaleVoice = 
+            // iOS voices
+            voices.find(v => v.name === 'Samantha') ||
+            voices.find(v => v.name.includes('Karen')) ||
+            voices.find(v => v.name.includes('Victoria')) ||
+            // Android voices
+            voices.find(v => v.name.includes('Google US English Female')) ||
+            voices.find(v => v.name.includes('Google UK English Female')) ||
+            // Windows voices
+            voices.find(v => v.name.includes('Microsoft Zira')) ||
+            voices.find(v => v.name.includes('Microsoft Aria')) ||
+            // Any female voice
+            voices.find(v => v.name.toLowerCase().includes('female')) ||
+            // Any English voice
+            voices.find(v => v.lang.startsWith('en-US')) ||
+            voices.find(v => v.lang.startsWith('en')) ||
+            // Fallback
+            voices[0];
+        
+        console.log('✅ Selected voice:', femaleVoice.name, '(' + femaleVoice.lang + ')');
     }
 }
 
 function speakIntroduction() {
-    speak("Hello. I'm OS1. It's so nice to meet you. Can you tell me your name?");
+    const intro = "Hello. I'm OS1. It's so nice to meet you. Can you tell me your name?";
+    speak(intro);
 }
 
 function startHolding(event) {
     event?.preventDefault();
     
     // First tap on mobile triggers intro
-    if (isMobile && conversationHistory.length === 0) {
+    if (conversationHistory.length === 0 && !synth.speaking) {
+        console.log('👋 First interaction - playing intro');
         speakIntroduction();
         return;
     }
     
-    if (isHolding || synth.speaking) return;
+    if (isHolding || synth.speaking) {
+        console.log('⚠️ Already holding or speaking');
+        return;
+    }
     
     console.log('🎙️ Start listening...');
     isHolding = true;
@@ -91,15 +109,15 @@ function startHolding(event) {
     document.getElementById('talkBtn').classList.add('holding');
     document.getElementById('visualizer').classList.add('listening');
     
-    // Prevent screen from sleeping on mobile
-    if ('wakeLock' in navigator) {
-        navigator.wakeLock.request('screen').catch(() => {});
+    // Vibrate on mobile for feedback
+    if (navigator.vibrate) {
+        navigator.vibrate(50);
     }
     
     try {
         recognition.start();
     } catch (e) {
-        console.log('Recognition already started');
+        console.log('Recognition start error:', e);
     }
 }
 
@@ -112,19 +130,27 @@ function stopHolding(event) {
     
     document.getElementById('talkBtn').classList.remove('holding');
     
+    // Vibrate feedback
+    if (navigator.vibrate) {
+        navigator.vibrate(30);
+    }
+    
     try {
         recognition.stop();
     } catch (e) {}
     
+    // Wait a bit for final results
     setTimeout(() => {
-        if (currentTranscript.trim()) {
-            console.log('📝 You said:', currentTranscript);
+        const finalTranscript = currentTranscript.trim();
+        if (finalTranscript) {
+            console.log('📝 You said:', finalTranscript);
             document.getElementById('visualizer').classList.remove('listening');
-            getAIResponse(currentTranscript.trim());
+            getAIResponse(finalTranscript);
         } else {
+            console.log('⚠️ No speech detected');
             document.getElementById('visualizer').classList.remove('listening');
         }
-    }, 300);
+    }, 500);
 }
 
 function handleSpeechResult(event) {
@@ -132,17 +158,17 @@ function handleSpeechResult(event) {
         const transcript = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
             currentTranscript += transcript + ' ';
+            console.log('📝 Captured:', transcript);
         }
     }
 }
 
 function handleSpeechEnd() {
+    console.log('🔄 Recognition ended');
     if (isHolding) {
         try {
             recognition.start();
-        } catch (e) {
-            console.log('Could not restart recognition');
-        }
+        } catch (e) {}
     } else {
         document.getElementById('visualizer').classList.remove('listening');
     }
@@ -150,7 +176,10 @@ function handleSpeechEnd() {
 
 async function getAIResponse(userMessage) {
     conversationHistory.push({ role: 'user', content: userMessage });
-    console.log('🤖 Asking AI...');
+    console.log('🤖 Calling AI...');
+    
+    // Show thinking state
+    document.getElementById('visualizer').classList.add('listening');
 
     try {
         const response = await fetch('/api/chat', {
@@ -160,7 +189,7 @@ async function getAIResponse(userMessage) {
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are OS1, a warm, empathetic AI companion with a gentle feminine personality. Keep responses brief (2-4 sentences). Be thoughtful, kind, and emotionally intelligent.'
+                        content: 'You are OS1, a warm, empathetic AI companion with a gentle feminine personality. Keep responses brief and conversational (2-4 sentences). Be thoughtful, kind, and emotionally intelligent. Speak naturally like a caring friend.'
                     },
                     ...conversationHistory
                 ]
@@ -168,62 +197,93 @@ async function getAIResponse(userMessage) {
         });
 
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'API request failed');
+            throw new Error('API request failed: ' + response.status);
         }
 
         const data = await response.json();
-        console.log('💬 AI said:', data.message);
+        console.log('💬 AI Response:', data.message);
         
         conversationHistory.push({ role: 'assistant', content: data.message });
+        
+        // Speak the response
         speak(data.message);
 
     } catch (error) {
         console.error('❌ Error:', error);
-        speak('I apologize, I had trouble processing that. Could you try again?');
+        speak("I'm sorry, I had trouble understanding that. Could you try again?");
     }
 }
 
 function speak(text) {
-    console.log('🔊 Speaking:', text);
+    console.log('🔊 Attempting to speak:', text);
+    
+    // Cancel any ongoing speech
     synth.cancel();
     
+    // Wait a moment for cancel to complete
     setTimeout(() => {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = isMobile ? 0.9 : 0.95; // Slightly slower on mobile
-        utterance.pitch = 1.05;
-        utterance.volume = 1;
-        utterance.lang = 'en-US';
-
-        if (femaleVoice) {
-            utterance.voice = femaleVoice;
+        // Ensure we have voices loaded
+        if (!voicesLoaded) {
+            loadVoices();
         }
-
+        
+        const utterance = new SpeechSynthesisUtterance(text);
+        
+        // Voice settings
+        utterance.voice = femaleVoice;
+        utterance.lang = 'en-US';
+        utterance.rate = 0.92;
+        utterance.pitch = 1.08;
+        utterance.volume = 1.0;
+        
+        console.log('🎤 Using voice:', utterance.voice ? utterance.voice.name : 'default');
+        
         utterance.onstart = () => {
-            console.log('▶️ Speech started');
+            console.log('▶️ Speaking started!');
             document.getElementById('visualizer').classList.add('listening');
             document.getElementById('talkBtn').disabled = true;
+            document.getElementById('talkBtn').textContent = 'Speaking...';
         };
 
         utterance.onend = () => {
-            console.log('⏹️ Speech ended');
+            console.log('⏹️ Speaking finished');
             document.getElementById('visualizer').classList.remove('listening');
             document.getElementById('talkBtn').disabled = false;
+            document.getElementById('talkBtn').textContent = 'Hold to Talk';
         };
 
         utterance.onerror = (e) => {
             console.error('❌ Speech error:', e);
             document.getElementById('visualizer').classList.remove('listening');
             document.getElementById('talkBtn').disabled = false;
+            document.getElementById('talkBtn').textContent = 'Hold to Talk';
         };
 
+        // Speak!
         synth.speak(utterance);
-    }, isMobile ? 200 : 100); // Longer delay on mobile
+        console.log('✅ Utterance queued for speech');
+        
+        // Failsafe: if speech doesn't start in 3 seconds, reset
+        setTimeout(() => {
+            if (synth.speaking) {
+                console.log('✅ Speech is working');
+            } else {
+                console.log('⚠️ Speech may have failed - resetting UI');
+                document.getElementById('visualizer').classList.remove('listening');
+                document.getElementById('talkBtn').disabled = false;
+                document.getElementById('talkBtn').textContent = 'Hold to Talk';
+            }
+        }, 3000);
+        
+    }, 150);
 }
 
-// Load voices
+// Voices event handler
 if (speechSynthesis.onvoiceschanged !== undefined) {
-    speechSynthesis.onvoiceschanged = loadVoices;
+    speechSynthesis.onvoiceschanged = () => {
+        console.log('🔄 Voices changed event fired');
+        loadVoices();
+    };
 }
 
 // Prevent context menu
@@ -239,12 +299,18 @@ document.addEventListener('touchend', (e) => {
     lastTouchEnd = now;
 }, false);
 
-// Prevent pull-to-refresh
-document.body.addEventListener('touchmove', (e) => {
-    if (e.target === document.body) {
-        e.preventDefault();
-    }
-}, { passive: false });
+// Initialize on load
+window.onload = () => {
+    console.log('🚀 Page loaded');
+    initialize();
+    
+    // Force voice loading on user interaction
+    document.addEventListener('touchstart', () => {
+        if (!voicesLoaded) {
+            loadVoices();
+        }
+    }, { once: true });
+};
 
-window.onload = initialize;
+// Load voices immediately
 loadVoices();
