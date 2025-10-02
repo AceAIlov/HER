@@ -5,11 +5,15 @@ let conversationHistory = [];
 let synth = window.speechSynthesis;
 let femaleVoice = null;
 let currentTranscript = '';
+let voicesLoaded = false;
 
 function initialize() {
+    console.log('Initializing OS1...');
+    
     // Initialize speech recognition
-    if ('webkitSpeechRecognition' in window) {
-        recognition = new webkitSpeechRecognition();
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
+        recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = true;
         recognition.lang = 'en-US';
@@ -17,33 +21,50 @@ function initialize() {
         recognition.onresult = handleSpeechResult;
         recognition.onerror = handleSpeechError;
         recognition.onend = handleSpeechEnd;
+        
+        console.log('Speech recognition initialized');
     } else {
-        alert('Speech recognition not supported. Please use Chrome.');
+        alert('Speech recognition not supported. Please use Chrome or Edge.');
         return;
     }
 
+    // Load voices - try multiple times as they load async
     loadVoices();
+    setTimeout(loadVoices, 100);
+    setTimeout(loadVoices, 500);
+    setTimeout(loadVoices, 1000);
     
     setTimeout(() => {
         document.getElementById('talkBtn').disabled = false;
+        console.log('Button enabled');
         
         setTimeout(() => {
+            console.log('Starting introduction...');
             speakIntroduction();
-        }, 500);
-    }, 1000);
+        }, 800);
+    }, 1500);
 }
 
 function loadVoices() {
     const voices = synth.getVoices();
+    console.log('Available voices:', voices.map(v => v.name));
     
-    femaleVoice = voices.find(voice => voice.name.includes('Samantha')) ||
-                 voices.find(voice => voice.name.includes('Karen')) ||
-                 voices.find(voice => voice.name.includes('Google US English Female')) ||
-                 voices.find(voice => voice.name.includes('Female')) ||
-                 voices.find(voice => voice.name.toLowerCase().includes('female')) ||
-                 voices.find(voice => voice.name.includes('Zira')) ||
-                 voices.find(voice => voice.name.includes('Microsoft Zira')) ||
-                 voices[0];
+    if (voices.length > 0) {
+        voicesLoaded = true;
+        
+        // Try to find best female voice
+        femaleVoice = voices.find(voice => voice.name.includes('Samantha')) ||
+                     voices.find(voice => voice.name.includes('Karen')) ||
+                     voices.find(voice => voice.name.includes('Google US English Female')) ||
+                     voices.find(voice => voice.name.includes('Female')) ||
+                     voices.find(voice => voice.name.toLowerCase().includes('female')) ||
+                     voices.find(voice => voice.name.includes('Zira')) ||
+                     voices.find(voice => voice.name.includes('Microsoft Zira')) ||
+                     voices.find(voice => voice.lang === 'en-US') ||
+                     voices[0];
+        
+        console.log('Selected voice:', femaleVoice ? femaleVoice.name : 'None');
+    }
 }
 
 function speakIntroduction() {
@@ -53,7 +74,12 @@ function speakIntroduction() {
 
 function startHolding(event) {
     if (event) event.preventDefault();
-    if (isHolding || synth.speaking) return;
+    console.log('Start holding');
+    
+    if (isHolding || synth.speaking) {
+        console.log('Already holding or speaking');
+        return;
+    }
     
     isHolding = true;
     isListening = true;
@@ -64,13 +90,16 @@ function startHolding(event) {
     
     try {
         recognition.start();
+        console.log('Recognition started');
     } catch (e) {
-        console.log('Recognition already started');
+        console.log('Recognition already started:', e);
     }
 }
 
 function stopHolding(event) {
     if (event) event.preventDefault();
+    console.log('Stop holding');
+    
     if (!isHolding) return;
     
     isHolding = false;
@@ -79,15 +108,18 @@ function stopHolding(event) {
     
     try {
         recognition.stop();
+        console.log('Recognition stopped');
     } catch (e) {
-        console.log('Recognition already stopped');
+        console.log('Recognition already stopped:', e);
     }
     
     if (currentTranscript.trim()) {
+        console.log('User said:', currentTranscript);
         document.getElementById('visualizer').classList.remove('listening');
         isListening = false;
         getAIResponse(currentTranscript.trim());
     } else {
+        console.log('No transcript captured');
         document.getElementById('visualizer').classList.remove('listening');
         isListening = false;
     }
@@ -108,6 +140,7 @@ function handleSpeechResult(event) {
 
     if (finalTranscript) {
         currentTranscript += finalTranscript;
+        console.log('Captured:', finalTranscript);
     }
 }
 
@@ -119,6 +152,7 @@ function handleSpeechError(event) {
 }
 
 function handleSpeechEnd() {
+    console.log('Speech ended');
     if (isHolding) {
         try {
             recognition.start();
@@ -136,6 +170,8 @@ async function getAIResponse(userMessage) {
         role: 'user',
         content: userMessage
     });
+
+    console.log('Sending to AI:', userMessage);
 
     try {
         const response = await fetch('/api/chat', {
@@ -160,6 +196,8 @@ async function getAIResponse(userMessage) {
             throw new Error(data.error);
         }
 
+        console.log('AI Response:', data.message);
+        
         const aiResponse = data.message;
         conversationHistory.push({
             role: 'assistant',
@@ -176,36 +214,61 @@ async function getAIResponse(userMessage) {
 }
 
 function speak(text) {
+    console.log('Speaking:', text);
+    
+    // Cancel any ongoing speech
     synth.cancel();
     
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.95;
-    utterance.pitch = 1.05;
-    utterance.volume = 1;
+    // Small delay to ensure cancel completes
+    setTimeout(() => {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 0.95;
+        utterance.pitch = 1.05;
+        utterance.volume = 1;
+        utterance.lang = 'en-US';
 
-    if (femaleVoice) {
-        utterance.voice = femaleVoice;
-    }
+        if (femaleVoice) {
+            utterance.voice = femaleVoice;
+            console.log('Using voice:', femaleVoice.name);
+        } else {
+            console.log('No female voice selected, using default');
+        }
 
-    utterance.onstart = () => {
-        document.getElementById('visualizer').classList.add('listening');
-        document.getElementById('talkBtn').disabled = true;
-    };
+        utterance.onstart = () => {
+            console.log('Speech started');
+            document.getElementById('visualizer').classList.add('listening');
+            document.getElementById('talkBtn').disabled = true;
+        };
 
-    utterance.onend = () => {
-        document.getElementById('visualizer').classList.remove('listening');
-        document.getElementById('talkBtn').disabled = false;
-    };
+        utterance.onend = () => {
+            console.log('Speech ended');
+            document.getElementById('visualizer').classList.remove('listening');
+            document.getElementById('talkBtn').disabled = false;
+        };
 
-    synth.speak(utterance);
+        utterance.onerror = (event) => {
+            console.error('Speech error:', event);
+            document.getElementById('visualizer').classList.remove('listening');
+            document.getElementById('talkBtn').disabled = false;
+        };
+
+        synth.speak(utterance);
+        console.log('Utterance queued');
+    }, 100);
 }
 
+// Load voices when they become available
 if (speechSynthesis.onvoiceschanged !== undefined) {
     speechSynthesis.onvoiceschanged = loadVoices;
 }
 
+// Prevent context menu
 document.addEventListener('contextmenu', (e) => {
     e.preventDefault();
 });
 
+// Initialize when page loads
 window.onload = initialize;
+
+// Also try to load voices immediately
+loadVoices();
