@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OS1</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #ffd1dc 0%, #ffb6c1 50%, #ff69b4 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #5a3a4a;
+        }
+
+        .container {
+            text-align: center;
+            max-width: 600px;
+            padding: 40px;
+        }
+
+        h1 {
+            font-size: 5em;
+            font-weight: 200;
+            letter-spacing: 15px;
+            color: #8b3a62;
+            margin-bottom: 60px;
+        }
+
+        .visualizer {
+            width: 250px;
+            height: 250px;
+            margin: 60px auto;
+            position: relative;
+        }
+
+        .pulse {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: rgba(255, 105, 180, 0.3);
+            position: absolute;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .pulse:nth-child(2) {
+            animation-delay: 0.5s;
+        }
+
+        .pulse:nth-child(3) {
+            animation-delay: 1s;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(0.8);
+                opacity: 0.5;
+            }
+            50% {
+                transform: scale(1.2);
+                opacity: 0.2;
+            }
+        }
+
+        .listening {
+            animation: listening 1s ease-in-out infinite;
+        }
+
+        @keyframes listening {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.15);
+            }
+        }
+
+        .controls {
+            margin-top: 60px;
+        }
+
+        button {
+            background: rgba(255, 182, 193, 0.4);
+            border: 3px solid #ff69b4;
+            color: #8b3a62;
+            padding: 25px 60px;
+            font-size: 1.3em;
+            border-radius: 60px;
+            cursor: pointer;
+            transition: all 0.2s;
+            backdrop-filter: blur(10px);
+            font-weight: 500;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        button:hover {
+            background: rgba(255, 182, 193, 0.6);
+            transform: scale(1.05);
+        }
+
+        button:active, button.holding {
+            background: rgba(255, 105, 180, 0.8);
+            transform: scale(0.95);
+            border-color: #ff1493;
+        }
+
+        button:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>OS1</h1>
+        
+        <div class="visualizer" id="visualizer">
+            <div class="pulse"></div>
+            <div class="pulse"></div>
+            <div class="pulse"></div>
+        </div>
+
+        <div class="controls">
+            <button 
+                id="talkBtn" 
+                onmousedown="startHolding()" 
+                onmouseup="stopHolding()" 
+                onmouseleave="stopHolding()"
+                ontouchstart="startHolding()" 
+                ontouchend="stopHolding()" 
+                disabled>
+                Hold to Talk
+            </button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
