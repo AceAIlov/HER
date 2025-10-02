@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: her-inspired-assistant
+    env: node
+    plan: free
+    buildCommand: npm install --verbose && npm run build --verbose
+    startCommand: node server.js
+    autoDeploy: true
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: PORT
+        value: 3001
+      # If you ever move vite back to devDependencies, also set:
+      # - key: NPM_CONFIG_PRODUCTION
+      #   value: "false"
