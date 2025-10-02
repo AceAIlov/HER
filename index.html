@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OS — Ambient</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      .infty {
+        width: 220px;
+        height: 120px;
+        position: relative;
+        margin: auto;
+      }
+      .loop {
+        position: absolute;
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        filter: blur(10px);
+        opacity: 0.8;
+        animation: pulse 2.6s ease-in-out infinite;
+      }
+      .loop.left {
+        left: 0;
+        background: radial-gradient(
+          circle at 30% 30%,
+          rgba(255, 255, 255, 0.35),
+          rgba(255, 255, 255, 0.05)
+        );
+      }
+      .loop.right {
+        right: 0;
+        background: radial-gradient(
+          circle at 70% 30%,
+          rgba(255, 255, 255, 0.35),
+          rgba(255, 255, 255, 0.05)
+        );
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          transform: scale(1);
+        }
+        50% {
+          transform: scale(1.08);
+        }
+      }
+    </style>
+  </head>
+  <body
+    class="h-screen w-screen bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-zinc-100"
+  >
+    <div id="root"></div>
+    <!-- Vite will replace this entrypoint with bundled assets after build -->
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
