@@ -2,43 +2,62 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#ffb6c1">
     <title>OS1</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            position: fixed;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         body {
-            font-family: 'Helvetica Neue', Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
             background: linear-gradient(135deg, #ffd1dc 0%, #ffb6c1 50%, #ff69b4 100%);
-            min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
             color: #5a3a4a;
+            touch-action: manipulation;
         }
 
         .container {
             text-align: center;
+            width: 100%;
             max-width: 600px;
-            padding: 40px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
         }
 
         h1 {
-            font-size: 5em;
+            font-size: clamp(3em, 12vw, 5em);
             font-weight: 200;
-            letter-spacing: 15px;
+            letter-spacing: clamp(8px, 3vw, 15px);
             color: #8b3a62;
-            margin-bottom: 60px;
+            margin-bottom: clamp(30px, 8vh, 60px);
         }
 
         .visualizer {
-            width: 250px;
-            height: 250px;
-            margin: 60px auto;
+            width: clamp(180px, 50vw, 250px);
+            height: clamp(180px, 50vw, 250px);
+            margin: clamp(30px, 8vh, 60px) auto;
             position: relative;
         }
 
@@ -84,27 +103,29 @@
         }
 
         .controls {
-            margin-top: 60px;
+            margin-top: clamp(30px, 8vh, 60px);
+            width: 100%;
+            display: flex;
+            justify-content: center;
         }
 
         button {
             background: rgba(255, 182, 193, 0.4);
             border: 3px solid #ff69b4;
             color: #8b3a62;
-            padding: 25px 60px;
-            font-size: 1.3em;
+            padding: clamp(20px, 5vw, 25px) clamp(40px, 12vw, 60px);
+            font-size: clamp(1.1em, 4vw, 1.3em);
             border-radius: 60px;
             cursor: pointer;
             transition: all 0.2s;
             backdrop-filter: blur(10px);
-            font-weight: 500;
+            font-weight: 600;
             user-select: none;
+            -webkit-user-select: none;
             -webkit-tap-highlight-color: transparent;
-        }
-
-        button:hover {
-            background: rgba(255, 182, 193, 0.6);
-            transform: scale(1.05);
+            touch-action: manipulation;
+            position: relative;
+            min-width: 200px;
         }
 
         button:active, button.holding {
@@ -116,6 +137,43 @@
         button:disabled {
             opacity: 0.3;
             cursor: not-allowed;
+        }
+
+        /* Mobile landscape */
+        @media (orientation: landscape) and (max-height: 600px) {
+            .container {
+                padding: 10px;
+            }
+            
+            h1 {
+                font-size: clamp(2em, 8vw, 3em);
+                margin-bottom: 20px;
+            }
+            
+            .visualizer {
+                width: clamp(120px, 30vw, 180px);
+                height: clamp(120px, 30vw, 180px);
+                margin: 20px auto;
+            }
+            
+            .controls {
+                margin-top: 20px;
+            }
+        }
+
+        /* Small phones */
+        @media (max-width: 375px) {
+            h1 {
+                font-size: 3em;
+                letter-spacing: 8px;
+            }
+        }
+
+        /* Prevent scrolling */
+        html {
+            overflow: hidden;
+            position: fixed;
+            width: 100%;
         }
     </style>
 </head>
@@ -132,11 +190,12 @@
         <div class="controls">
             <button 
                 id="talkBtn" 
-                onmousedown="startHolding()" 
-                onmouseup="stopHolding()" 
-                onmouseleave="stopHolding()"
-                ontouchstart="startHolding()" 
-                ontouchend="stopHolding()" 
+                ontouchstart="startHolding(event)" 
+                ontouchend="stopHolding(event)"
+                ontouchcancel="stopHolding(event)"
+                onmousedown="startHolding(event)" 
+                onmouseup="stopHolding(event)" 
+                onmouseleave="stopHolding(event)"
                 disabled>
                 Hold to Talk
             </button>
