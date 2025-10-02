@@ -6,6 +6,7 @@ let femaleVoice = null;
 let currentTranscript = '';
 let isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 let voicesLoaded = false;
+let hasGreeted = false;
 
 function initialize() {
     console.log('🎤 Initializing OS1...');
@@ -31,10 +32,9 @@ function initialize() {
         return;
     }
 
-    // Force load voices - critical for mobile
+    // Force load voices
     loadVoices();
     
-    // Try multiple times as voices load async
     const voiceInterval = setInterval(() => {
         loadVoices();
         if (voicesLoaded) {
@@ -47,8 +47,8 @@ function initialize() {
     // Enable button
     setTimeout(() => {
         document.getElementById('talkBtn').disabled = false;
-        console.log('✅ Button enabled - Tap to begin');
-    }, 1500);
+        console.log('✅ Ready - Tap to begin');
+    }, 1000);
 }
 
 function loadVoices() {
@@ -56,26 +56,32 @@ function loadVoices() {
     
     if (voices.length > 0 && !voicesLoaded) {
         voicesLoaded = true;
-        console.log('🔊 Available voices:', voices.map(v => v.name + ' (' + v.lang + ')'));
+        console.log('🔊 Available voices:', voices.map(v => `${v.name} (${v.lang})`));
         
-        // Priority order for best female voices
+        // BEST QUALITY VOICES - Priority order
         femaleVoice = 
-            // iOS voices
-            voices.find(v => v.name === 'Samantha') ||
-            voices.find(v => v.name.includes('Karen')) ||
-            voices.find(v => v.name.includes('Victoria')) ||
-            // Android voices
+            // Premium iOS voices (Best quality)
+            voices.find(v => v.name === 'Samantha' && v.lang === 'en-US') ||
+            voices.find(v => v.name === 'Ava' && v.lang === 'en-US') ||
+            voices.find(v => v.name === 'Nicky' && v.lang === 'en-US') ||
+            voices.find(v => v.name === 'Susan' && v.lang === 'en-US') ||
+            voices.find(v => v.name === 'Karen' && v.lang === 'en-AU') ||
+            
+            // Premium Android voices (High quality)
             voices.find(v => v.name.includes('Google US English Female')) ||
-            voices.find(v => v.name.includes('Google UK English Female')) ||
-            // Windows voices
-            voices.find(v => v.name.includes('Microsoft Zira')) ||
-            voices.find(v => v.name.includes('Microsoft Aria')) ||
-            // Any female voice
-            voices.find(v => v.name.toLowerCase().includes('female')) ||
-            // Any English voice
-            voices.find(v => v.lang.startsWith('en-US')) ||
+            voices.find(v => v.name.includes('en-us-x-sfg-network')) ||
+            voices.find(v => v.name.includes('en-us-x-tpf-network')) ||
+            
+            // Premium Windows voices
+            voices.find(v => v.name === 'Microsoft Aria Online (Natural) - English (United States)') ||
+            voices.find(v => v.name === 'Microsoft Jenny Online (Natural) - English (United States)') ||
+            voices.find(v => v.name.includes('Natural') && v.lang.startsWith('en-US')) ||
+            
+            // Standard voices
+            voices.find(v => v.name.includes('Zira') && v.lang === 'en-US') ||
+            voices.find(v => v.name.toLowerCase().includes('female') && v.lang.startsWith('en')) ||
+            voices.find(v => v.lang === 'en-US') ||
             voices.find(v => v.lang.startsWith('en')) ||
-            // Fallback
             voices[0];
         
         console.log('✅ Selected voice:', femaleVoice.name, '(' + femaleVoice.lang + ')');
@@ -90,15 +96,22 @@ function speakIntroduction() {
 function startHolding(event) {
     event?.preventDefault();
     
-    // First tap on mobile triggers intro
-    if (conversationHistory.length === 0 && !synth.speaking) {
-        console.log('👋 First interaction - playing intro');
+    // First tap plays intro, doesn't record
+    if (!hasGreeted) {
+        console.log('👋 Playing greeting...');
+        hasGreeted = true;
         speakIntroduction();
         return;
     }
     
-    if (isHolding || synth.speaking) {
-        console.log('⚠️ Already holding or speaking');
+    // Don't start if AI is speaking
+    if (synth.speaking) {
+        console.log('⚠️ Wait for OS1 to finish speaking');
+        return;
+    }
+    
+    if (isHolding) {
+        console.log('⚠️ Already listening');
         return;
     }
     
@@ -107,9 +120,10 @@ function startHolding(event) {
     currentTranscript = '';
     
     document.getElementById('talkBtn').classList.add('holding');
+    document.getElementById('talkBtn').textContent = 'Listening...';
     document.getElementById('visualizer').classList.add('listening');
     
-    // Vibrate on mobile for feedback
+    // Haptic feedback
     if (navigator.vibrate) {
         navigator.vibrate(50);
     }
@@ -123,14 +137,19 @@ function startHolding(event) {
 
 function stopHolding(event) {
     event?.preventDefault();
+    
+    // Ignore if we haven't greeted yet
+    if (!hasGreeted) return;
+    
     if (!isHolding) return;
     
     console.log('🛑 Stop listening');
     isHolding = false;
     
     document.getElementById('talkBtn').classList.remove('holding');
+    document.getElementById('talkBtn').textContent = 'Processing...';
     
-    // Vibrate feedback
+    // Haptic feedback
     if (navigator.vibrate) {
         navigator.vibrate(30);
     }
@@ -139,7 +158,7 @@ function stopHolding(event) {
         recognition.stop();
     } catch (e) {}
     
-    // Wait a bit for final results
+    // Wait for final speech results
     setTimeout(() => {
         const finalTranscript = currentTranscript.trim();
         if (finalTranscript) {
@@ -149,8 +168,9 @@ function stopHolding(event) {
         } else {
             console.log('⚠️ No speech detected');
             document.getElementById('visualizer').classList.remove('listening');
+            document.getElementById('talkBtn').textContent = 'Hold to Talk';
         }
-    }, 500);
+    }, 600);
 }
 
 function handleSpeechResult(event) {
@@ -178,7 +198,6 @@ async function getAIResponse(userMessage) {
     conversationHistory.push({ role: 'user', content: userMessage });
     console.log('🤖 Calling AI...');
     
-    // Show thinking state
     document.getElementById('visualizer').classList.add('listening');
 
     try {
@@ -189,7 +208,7 @@ async function getAIResponse(userMessage) {
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are OS1, a warm, empathetic AI companion with a gentle feminine personality. Keep responses brief and conversational (2-4 sentences). Be thoughtful, kind, and emotionally intelligent. Speak naturally like a caring friend.'
+                        content: 'You are OS1, a warm, empathetic, curious AI companion with a gentle feminine personality. You genuinely care about the person you\'re talking to. Keep responses natural and conversational (2-4 sentences). Show genuine interest and emotional intelligence. Be thoughtful, kind, and speak like a caring friend having an intimate conversation.'
                     },
                     ...conversationHistory
                 ]
@@ -205,48 +224,49 @@ async function getAIResponse(userMessage) {
         
         conversationHistory.push({ role: 'assistant', content: data.message });
         
-        // Speak the response
-        speak(data.message);
+        // Small delay before speaking
+        setTimeout(() => {
+            speak(data.message);
+        }, 300);
 
     } catch (error) {
         console.error('❌ Error:', error);
-        speak("I'm sorry, I had trouble understanding that. Could you try again?");
+        speak("I'm sorry, I had trouble with that. Could you try again?");
     }
 }
 
 function speak(text) {
-    console.log('🔊 Attempting to speak:', text);
+    console.log('🔊 Speaking:', text);
     
     // Cancel any ongoing speech
     synth.cancel();
     
-    // Wait a moment for cancel to complete
+    // Wait for cancel to complete
     setTimeout(() => {
-        // Ensure we have voices loaded
         if (!voicesLoaded) {
             loadVoices();
         }
         
         const utterance = new SpeechSynthesisUtterance(text);
         
-        // Voice settings
+        // HIGH QUALITY VOICE SETTINGS
         utterance.voice = femaleVoice;
         utterance.lang = 'en-US';
-        utterance.rate = 0.92;
-        utterance.pitch = 1.08;
+        utterance.rate = 0.88;      // Slower, more natural
+        utterance.pitch = 1.12;     // Slightly higher, warmer
         utterance.volume = 1.0;
         
-        console.log('🎤 Using voice:', utterance.voice ? utterance.voice.name : 'default');
+        console.log('🎤 Voice:', utterance.voice ? utterance.voice.name : 'default');
         
         utterance.onstart = () => {
-            console.log('▶️ Speaking started!');
+            console.log('▶️ Speaking...');
             document.getElementById('visualizer').classList.add('listening');
             document.getElementById('talkBtn').disabled = true;
             document.getElementById('talkBtn').textContent = 'Speaking...';
         };
 
         utterance.onend = () => {
-            console.log('⏹️ Speaking finished');
+            console.log('⏹️ Speech finished');
             document.getElementById('visualizer').classList.remove('listening');
             document.getElementById('talkBtn').disabled = false;
             document.getElementById('talkBtn').textContent = 'Hold to Talk';
@@ -259,29 +279,16 @@ function speak(text) {
             document.getElementById('talkBtn').textContent = 'Hold to Talk';
         };
 
-        // Speak!
         synth.speak(utterance);
-        console.log('✅ Utterance queued for speech');
+        console.log('✅ Speech queued');
         
-        // Failsafe: if speech doesn't start in 3 seconds, reset
-        setTimeout(() => {
-            if (synth.speaking) {
-                console.log('✅ Speech is working');
-            } else {
-                console.log('⚠️ Speech may have failed - resetting UI');
-                document.getElementById('visualizer').classList.remove('listening');
-                document.getElementById('talkBtn').disabled = false;
-                document.getElementById('talkBtn').textContent = 'Hold to Talk';
-            }
-        }, 3000);
-        
-    }, 150);
+    }, 200);
 }
 
-// Voices event handler
+// Voice loading
 if (speechSynthesis.onvoiceschanged !== undefined) {
     speechSynthesis.onvoiceschanged = () => {
-        console.log('🔄 Voices changed event fired');
+        console.log('🔄 Voices changed');
         loadVoices();
     };
 }
@@ -299,12 +306,11 @@ document.addEventListener('touchend', (e) => {
     lastTouchEnd = now;
 }, false);
 
-// Initialize on load
+// Initialize
 window.onload = () => {
     console.log('🚀 Page loaded');
     initialize();
     
-    // Force voice loading on user interaction
     document.addEventListener('touchstart', () => {
         if (!voicesLoaded) {
             loadVoices();
@@ -312,5 +318,4 @@ window.onload = () => {
     }, { once: true });
 };
 
-// Load voices immediately
 loadVoices();
