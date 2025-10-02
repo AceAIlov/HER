@@ -4,9 +4,11 @@ let conversationHistory = [];
 let synth = window.speechSynthesis;
 let femaleVoice = null;
 let currentTranscript = '';
+let isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
 function initialize() {
     console.log('🎤 Initializing OS1...');
+    console.log('📱 Mobile:', isMobile);
     
     // Speech Recognition
     if ('webkitSpeechRecognition' in window) {
@@ -15,38 +17,55 @@ function initialize() {
         recognition.interimResults = true;
         recognition.lang = 'en-US';
         recognition.onresult = handleSpeechResult;
-        recognition.onerror = (e) => console.error('❌ Recognition error:', e.error);
+        recognition.onerror = (e) => {
+            console.error('❌ Recognition error:', e.error);
+            // Auto-recover from common mobile errors
+            if (e.error === 'not-allowed') {
+                alert('Please allow microphone access');
+            }
+        };
         recognition.onend = handleSpeechEnd;
         console.log('✅ Speech recognition ready');
     } else {
-        alert('❌ Speech recognition not supported. Use Chrome!');
+        alert('❌ Speech recognition not supported. Use Chrome or Safari!');
         return;
     }
 
-    // Load voices
+    // Load voices multiple times (important for mobile)
     loadVoices();
+    setTimeout(loadVoices, 100);
+    setTimeout(loadVoices, 500);
+    setTimeout(loadVoices, 1000);
+    setTimeout(loadVoices, 2000);
     
     // Enable button and start intro
     setTimeout(() => {
         document.getElementById('talkBtn').disabled = false;
         console.log('✅ Button enabled');
-        setTimeout(() => speakIntroduction(), 500);
-    }, 1000);
+        
+        // On mobile, wait for user interaction before speaking
+        if (!isMobile) {
+            setTimeout(() => speakIntroduction(), 500);
+        } else {
+            console.log('📱 Waiting for user tap to start...');
+        }
+    }, 1500);
 }
 
 function loadVoices() {
     const voices = synth.getVoices();
-    console.log('🔊 Voices:', voices.length);
+    console.log('🔊 Voices available:', voices.length);
     
     if (voices.length > 0) {
-        femaleVoice = voices.find(v => v.name.includes('Google US English Female')) ||
-                     voices.find(v => v.name.includes('Samantha')) ||
+        // Better voice selection for mobile
+        femaleVoice = voices.find(v => v.name.includes('Samantha')) || // iOS
+                     voices.find(v => v.name.includes('Google US English Female')) || // Android
+                     voices.find(v => v.name.includes('Karen')) ||
                      voices.find(v => v.name.includes('Female')) ||
-                     voices.find(v => v.lang === 'en-US' && v.name.includes('Female')) ||
-                     voices.find(v => v.lang.startsWith('en')) ||
+                     voices.find(v => v.lang === 'en-US') ||
                      voices[0];
         
-        console.log('✅ Selected voice:', femaleVoice?.name || 'Default');
+        console.log('✅ Voice:', femaleVoice?.name || 'Default');
     }
 }
 
@@ -56,6 +75,13 @@ function speakIntroduction() {
 
 function startHolding(event) {
     event?.preventDefault();
+    
+    // First tap on mobile triggers intro
+    if (isMobile && conversationHistory.length === 0) {
+        speakIntroduction();
+        return;
+    }
+    
     if (isHolding || synth.speaking) return;
     
     console.log('🎙️ Start listening...');
@@ -64,6 +90,11 @@ function startHolding(event) {
     
     document.getElementById('talkBtn').classList.add('holding');
     document.getElementById('visualizer').classList.add('listening');
+    
+    // Prevent screen from sleeping on mobile
+    if ('wakeLock' in navigator) {
+        navigator.wakeLock.request('screen').catch(() => {});
+    }
     
     try {
         recognition.start();
@@ -85,20 +116,22 @@ function stopHolding(event) {
         recognition.stop();
     } catch (e) {}
     
-    if (currentTranscript.trim()) {
-        console.log('📝 You said:', currentTranscript);
-        document.getElementById('visualizer').classList.remove('listening');
-        getAIResponse(currentTranscript.trim());
-    } else {
-        document.getElementById('visualizer').classList.remove('listening');
-    }
+    setTimeout(() => {
+        if (currentTranscript.trim()) {
+            console.log('📝 You said:', currentTranscript);
+            document.getElementById('visualizer').classList.remove('listening');
+            getAIResponse(currentTranscript.trim());
+        } else {
+            document.getElementById('visualizer').classList.remove('listening');
+        }
+    }, 300);
 }
 
 function handleSpeechResult(event) {
     for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-            currentTranscript += transcript;
+            currentTranscript += transcript + ' ';
         }
     }
 }
@@ -107,7 +140,9 @@ function handleSpeechEnd() {
     if (isHolding) {
         try {
             recognition.start();
-        } catch (e) {}
+        } catch (e) {
+            console.log('Could not restart recognition');
+        }
     } else {
         document.getElementById('visualizer').classList.remove('listening');
     }
@@ -155,7 +190,7 @@ function speak(text) {
     
     setTimeout(() => {
         const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 0.95;
+        utterance.rate = isMobile ? 0.9 : 0.95; // Slightly slower on mobile
         utterance.pitch = 1.05;
         utterance.volume = 1;
         utterance.lang = 'en-US';
@@ -183,7 +218,7 @@ function speak(text) {
         };
 
         synth.speak(utterance);
-    }, 100);
+    }, isMobile ? 200 : 100); // Longer delay on mobile
 }
 
 // Load voices
@@ -191,6 +226,25 @@ if (speechSynthesis.onvoiceschanged !== undefined) {
     speechSynthesis.onvoiceschanged = loadVoices;
 }
 
+// Prevent context menu
 document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// Prevent zoom on double tap
+let lastTouchEnd = 0;
+document.addEventListener('touchend', (e) => {
+    const now = Date.now();
+    if (now - lastTouchEnd <= 300) {
+        e.preventDefault();
+    }
+    lastTouchEnd = now;
+}, false);
+
+// Prevent pull-to-refresh
+document.body.addEventListener('touchmove', (e) => {
+    if (e.target === document.body) {
+        e.preventDefault();
+    }
+}, { passive: false });
+
 window.onload = initialize;
 loadVoices();
