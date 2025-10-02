@@ -11,8 +11,17 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
 app.post('/api/chat', async (req, res) => {
+    console.log('Received chat request');
+    
     try {
         const { messages } = req.body;
+
+        if (!process.env.OPENAI_API_KEY) {
+            console.error('No API key found');
+            return res.status(500).json({ error: 'API key not configured' });
+        }
+
+        console.log('Calling OpenAI...');
 
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -29,16 +38,20 @@ app.post('/api/chat', async (req, res) => {
         });
 
         const data = await response.json();
+        console.log('OpenAI response received');
         
         if (data.error) {
+            console.error('OpenAI error:', data.error);
             return res.status(500).json({ error: data.error.message });
         }
 
-        res.json({ message: data.choices[0].message.content });
+        const message = data.choices[0].message.content;
+        console.log('Sending response:', message);
+        res.json({ message: message });
 
     } catch (error) {
-        console.error('Error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        console.error('Server Error:', error);
+        res.status(500).json({ error: error.message || 'Internal server error' });
     }
 });
 
@@ -47,5 +60,6 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`✅ Server running on port ${PORT}`);
+    console.log(`✅ OpenAI API Key: ${process.env.OPENAI_API_KEY ? 'Configured' : 'MISSING'}`);
 });
