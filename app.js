@@ -56,35 +56,56 @@ function loadVoices() {
     
     if (voices.length > 0 && !voicesLoaded) {
         voicesLoaded = true;
-        console.log('🔊 Available voices:', voices.map(v => `${v.name} (${v.lang})`));
+        console.log('🔊 All voices:', voices.map(v => `${v.name} | ${v.lang} | ${v.localService ? 'Local' : 'Network'}`));
         
-        // BEST QUALITY VOICES - Priority order
+        // ULTRA PREMIUM VOICES - Most human-like
         femaleVoice = 
-            // Premium iOS voices (Best quality)
-            voices.find(v => v.name === 'Samantha' && v.lang === 'en-US') ||
-            voices.find(v => v.name === 'Ava' && v.lang === 'en-US') ||
-            voices.find(v => v.name === 'Nicky' && v.lang === 'en-US') ||
-            voices.find(v => v.name === 'Susan' && v.lang === 'en-US') ||
-            voices.find(v => v.name === 'Karen' && v.lang === 'en-AU') ||
+            // iOS Premium Neural Voices (BEST)
+            voices.find(v => v.name === 'Samantha (Enhanced)') ||
+            voices.find(v => v.name === 'Ava (Premium)') ||
+            voices.find(v => v.name === 'Nicky') ||
+            voices.find(v => v.name === 'Samantha') ||
+            voices.find(v => v.name === 'Ava') ||
+            voices.find(v => v.name === 'Susan') ||
+            voices.find(v => v.name === 'Allison') ||
+            voices.find(v => v.name === 'Zoe') ||
             
-            // Premium Android voices (High quality)
+            // Google Neural/Wavenet Voices (HIGHEST QUALITY)
+            voices.find(v => v.name.includes('Google US English Female') && v.name.includes('Wavenet')) ||
+            voices.find(v => v.name.includes('en-US-Wavenet-F')) ||
+            voices.find(v => v.name.includes('en-US-Wavenet-C')) ||
+            voices.find(v => v.name.includes('en-US-Wavenet-E')) ||
+            voices.find(v => v.name.includes('en-US-Neural2-F')) ||
+            voices.find(v => v.name.includes('en-US-Neural2-C')) ||
+            voices.find(v => v.name.includes('en-US-Neural2-E')) ||
             voices.find(v => v.name.includes('Google US English Female')) ||
             voices.find(v => v.name.includes('en-us-x-sfg-network')) ||
             voices.find(v => v.name.includes('en-us-x-tpf-network')) ||
+            voices.find(v => v.name.includes('en-us-x-iob-network')) ||
             
-            // Premium Windows voices
-            voices.find(v => v.name === 'Microsoft Aria Online (Natural) - English (United States)') ||
-            voices.find(v => v.name === 'Microsoft Jenny Online (Natural) - English (United States)') ||
-            voices.find(v => v.name.includes('Natural') && v.lang.startsWith('en-US')) ||
+            // Microsoft Azure Neural Voices (PREMIUM)
+            voices.find(v => v.name.includes('Microsoft Aria Online (Natural)')) ||
+            voices.find(v => v.name.includes('Microsoft Jenny Online (Natural)')) ||
+            voices.find(v => v.name.includes('Microsoft Michelle Online (Natural)')) ||
+            voices.find(v => v.name.includes('Microsoft Sonia Online (Natural)')) ||
+            voices.find(v => v.name.includes('Natural') && v.lang === 'en-US') ||
             
-            // Standard voices
-            voices.find(v => v.name.includes('Zira') && v.lang === 'en-US') ||
-            voices.find(v => v.name.toLowerCase().includes('female') && v.lang.startsWith('en')) ||
+            // Amazon Polly Neural Voices
+            voices.find(v => v.name.includes('Joanna (Neural)')) ||
+            voices.find(v => v.name.includes('Kendra (Neural)')) ||
+            voices.find(v => v.name.includes('Kimberly (Neural)')) ||
+            voices.find(v => v.name.includes('Salli (Neural)')) ||
+            
+            // Standard Premium voices
+            voices.find(v => v.name === 'Karen' && v.lang === 'en-AU') ||
+            voices.find(v => v.name.includes('Microsoft Zira Desktop') && v.lang === 'en-US') ||
+            voices.find(v => v.name.toLowerCase().includes('female') && v.lang === 'en-US') ||
+            voices.find(v => v.lang === 'en-US' && !v.localService) || // Prefer network voices
             voices.find(v => v.lang === 'en-US') ||
             voices.find(v => v.lang.startsWith('en')) ||
             voices[0];
         
-        console.log('✅ Selected voice:', femaleVoice.name, '(' + femaleVoice.lang + ')');
+        console.log('✅ Selected PREMIUM voice:', femaleVoice.name, '(' + femaleVoice.lang + ')', femaleVoice.localService ? '[Local]' : '[Network]');
     }
 }
 
@@ -249,14 +270,16 @@ function speak(text) {
         
         const utterance = new SpeechSynthesisUtterance(text);
         
-        // HIGH QUALITY VOICE SETTINGS
+        // ULTRA-REALISTIC HUMAN VOICE SETTINGS
         utterance.voice = femaleVoice;
         utterance.lang = 'en-US';
-        utterance.rate = 0.88;      // Slower, more natural
-        utterance.pitch = 1.12;     // Slightly higher, warmer
-        utterance.volume = 1.0;
         
-        console.log('🎤 Voice:', utterance.voice ? utterance.voice.name : 'default');
+        // Perfect human-like speech parameters
+        utterance.rate = 0.85;      // Natural conversational pace
+        utterance.pitch = 1.15;     // Warm, friendly feminine pitch
+        utterance.volume = 1.0;     // Full volume
+        
+        console.log('🎤 Ultra-premium voice:', utterance.voice ? utterance.voice.name : 'default');
         
         utterance.onstart = () => {
             console.log('▶️ Speaking...');
@@ -280,7 +303,7 @@ function speak(text) {
         };
 
         synth.speak(utterance);
-        console.log('✅ Speech queued');
+        console.log('✅ Ultra-realistic speech queued');
         
     }, 200);
 }
