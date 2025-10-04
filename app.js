@@ -9,13 +9,12 @@ let currentAudioSource;
 // Setup state
 let setupStage = 0;
 let setupComplete = false;
-let userName = '';
 
-const setupQuestions = [
-    "Welcome to the OS1 setup. To begin, would you like a male or female voice?",
-    "How would you describe your relationship with your mother?",
-    "What was your most recent romantic relationship like?",
-    "Thank you. OS1 is initializing now."
+const setupScript = [
+    "Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.",
+    "Are you social or anti-social?",
+    "In your voice, I sense hesitance. Would you agree with that?",
+    "Thank you. Please wait as your individualized operating system is initiated."
 ];
 
 function initialize() {
@@ -47,6 +46,7 @@ function initialize() {
     setTimeout(() => {
         document.getElementById('talkBtn').disabled = false;
         console.log('✅ Ready - Tap to begin setup');
+        document.getElementById('talkBtn').textContent = 'Start Setup';
     }, 1000);
 }
 
@@ -56,36 +56,46 @@ function startSetup() {
     if (audioContext.state === 'suspended') {
         audioContext.resume().then(() => {
             console.log('🔊 Audio context resumed');
-            askSetupQuestion();
+            playSetupScript();
         });
     } else {
-        askSetupQuestion();
+        playSetupScript();
     }
 }
 
-function askSetupQuestion() {
-    if (setupStage < setupQuestions.length) {
-        const question = setupQuestions[setupStage];
-        console.log(`📋 Setup question ${setupStage + 1}:`, question);
-        speakWithVoice(question, 'setup');
+function playSetupScript() {
+    if (setupStage === 0) {
+        // Welcome message
+        speakWithVoice(setupScript[0], 'setup');
+        setupStage = 1;
+    } else if (setupStage === 1) {
+        // First question
+        setTimeout(() => {
+            speakWithVoice(setupScript[1], 'setup');
+            setupStage = 2;
+        }, 1000);
     }
 }
 
 function handleSetupResponse(userResponse) {
-    console.log(`💬 Setup response ${setupStage + 1}:`, userResponse);
+    console.log(`💬 Setup response ${setupStage}:`, userResponse);
     
-    setupStage++;
-    
-    if (setupStage < setupQuestions.length) {
-        // Continue setup
+    if (setupStage === 2) {
+        // After first question response
         setTimeout(() => {
-            askSetupQuestion();
+            speakWithVoice(setupScript[2], 'setup');
+            setupStage = 3;
         }, 1000);
-    } else {
-        // Setup complete, transition to OS1
+    } else if (setupStage === 3) {
+        // After second question response
         setTimeout(() => {
-            completeSetup();
-        }, 2000);
+            speakWithVoice(setupScript[3], 'setup');
+            setupStage = 4;
+            // Complete setup after final message
+            setTimeout(() => {
+                completeSetup();
+            }, 4000);
+        }, 1000);
     }
 }
 
@@ -104,7 +114,7 @@ function startHolding(event) {
     // First tap starts setup
     if (setupStage === 0 && !setupComplete) {
         console.log('👋 Starting setup...');
-        setupStage = 0;
+        document.getElementById('talkBtn').textContent = 'Hold to Talk';
         startSetup();
         return;
     }
@@ -164,11 +174,15 @@ function stopHolding(event) {
             console.log('📝 You said:', finalTranscript);
             document.getElementById('visualizer').classList.remove('listening');
             
-            if (!setupComplete) {
+            if (!setupComplete && setupStage >= 2 && setupStage <= 3) {
+                // During setup questions
                 handleSetupResponse(finalTranscript);
                 document.getElementById('talkBtn').textContent = 'Hold to Talk';
-            } else {
+            } else if (setupComplete) {
+                // Normal conversation with OS1
                 getAIResponse(finalTranscript);
+            } else {
+                document.getElementById('talkBtn').textContent = 'Hold to Talk';
             }
         } else {
             console.log('⚠️ No speech detected');
@@ -249,7 +263,12 @@ async function speakWithVoice(text, voiceType) {
     
     document.getElementById('visualizer').classList.add('listening');
     document.getElementById('talkBtn').disabled = true;
-    document.getElementById('talkBtn').textContent = voiceType === 'setup' ? 'Setup...' : 'Speaking...';
+    
+    if (voiceType === 'setup') {
+        document.getElementById('talkBtn').textContent = 'Installing OS1...';
+    } else {
+        document.getElementById('talkBtn').textContent = 'Speaking...';
+    }
 
     try {
         const response = await fetch('/api/tts', {
