@@ -8,11 +8,16 @@ let setupComplete = false;
 let setupStage = 0;
 let selectedVoice = 'female';
 let setupStarted = false;
+let isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
 function initialize() {
     console.log('🎤 Initializing OS1...');
+    console.log('📱 Mobile:', isMobile);
     
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    // Don't create audio context yet on mobile
+    if (!isMobile) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
     
     if ('webkitSpeechRecognition' in window) {
         recognition = new webkitSpeechRecognition();
@@ -45,55 +50,75 @@ function startSetup() {
     document.getElementById('talkBtn').disabled = true;
     document.getElementById('talkBtn').textContent = 'Installing...';
     
+    // Create audio context on mobile on first tap
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    
     if (audioContext.state === 'suspended') {
         audioContext.resume().then(() => {
             console.log('✅ Audio unlocked');
-            setTimeout(() => runSetup(), 200);
+            setTimeout(() => runSetup(), 300);
         });
     } else {
-        setTimeout(() => runSetup(), 200);
+        setTimeout(() => runSetup(), 300);
     }
 }
 
 async function runSetup() {
     console.log('📢 Running setup sequence...');
     
-    await speakWithVoice(
-        "Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.",
-        'setup'
-    );
-    await sleep(800);
-    
-    await speakWithVoice("Are you social or anti-social?", 'setup');
-    setupStage = 1;
-    enableListening();
+    try {
+        await speakWithVoice(
+            "Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.",
+            'setup'
+        );
+        await sleep(800);
+        
+        await speakWithVoice("Are you social or anti-social?", 'setup');
+        setupStage = 1;
+        enableListening();
+    } catch (error) {
+        console.error('❌ Setup failed:', error);
+        setupStarted = false;
+        document.getElementById('talkBtn').disabled = false;
+        document.getElementById('talkBtn').textContent = 'Start OS1';
+    }
 }
 
 async function continueSetup() {
-    if (setupStage === 1) {
-        await speakWithVoice("How's your relationship with your mother?", 'setup');
-        setupStage = 2;
+    console.log('🔄 Continue setup, stage:', setupStage);
+    
+    try {
+        if (setupStage === 1) {
+            await speakWithVoice("How's your relationship with your mother?", 'setup');
+            setupStage = 2;
+            enableListening();
+            
+        } else if (setupStage === 2) {
+            await speakWithVoice("Thank you. Please wait as your individualized operating system is initiated.", 'setup');
+            await sleep(1000);
+            
+            await speakWithVoice("Would you like a male or female voice?", 'setup');
+            setupStage = 3;
+            enableListening();
+            
+        } else if (setupStage === 3) {
+            console.log('✅ Setup complete! Selected voice:', selectedVoice);
+            setupComplete = true;
+            setupStage = 0;
+            conversationHistory = [];
+            
+            await speakWithVoice("Hi. How are you?", selectedVoice);
+        }
+    } catch (error) {
+        console.error('❌ Continue setup failed:', error);
         enableListening();
-        
-    } else if (setupStage === 2) {
-        await speakWithVoice("Thank you. Please wait as your individualized operating system is initiated.", 'setup');
-        await sleep(1000);
-        
-        await speakWithVoice("Would you like a male or female voice?", 'setup');
-        setupStage = 3;
-        enableListening();
-        
-    } else if (setupStage === 3) {
-        console.log('✅ Setup complete! Selected voice:', selectedVoice);
-        setupComplete = true;
-        setupStage = 0;
-        conversationHistory = [];
-        
-        await speakWithVoice("Hi. How are you?", selectedVoice);
     }
 }
 
 function enableListening() {
+    console.log('✅ Enabling listening for stage:', setupStage);
     document.getElementById('talkBtn').disabled = false;
     document.getElementById('talkBtn').textContent = 'Hold to Answer';
 }
@@ -103,12 +128,13 @@ function sleep(ms) {
 }
 
 function startHolding(event) {
-    event?.preventDefault();
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
     
     console.log('👆 Button pressed');
-    console.log('Setup started:', setupStarted);
-    console.log('Setup complete:', setupComplete);
-    console.log('Setup stage:', setupStage);
+    console.log('Setup started:', setupStarted, 'Complete:', setupComplete, 'Stage:', setupStage);
     
     // First tap - start setup
     if (!setupStarted && !setupComplete && setupStage === 0) {
@@ -123,7 +149,7 @@ function startHolding(event) {
         return;
     }
     
-    // Don't allow if not in listening mode
+    // Don't allow if not ready
     if (!setupComplete && setupStage === 0) {
         console.log('⚠️ Setup not ready yet');
         return;
@@ -134,7 +160,7 @@ function startHolding(event) {
         return;
     }
     
-    console.log('🎙️ Listening...');
+    console.log('🎙️ Start listening...');
     isHolding = true;
     currentTranscript = '';
     
@@ -152,11 +178,14 @@ function startHolding(event) {
 }
 
 function stopHolding(event) {
-    event?.preventDefault();
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
     
     if (!isHolding) return;
     
-    console.log('🛑 Stopped');
+    console.log('🛑 Stop listening');
     isHolding = false;
     
     document.getElementById('talkBtn').classList.remove('holding');
@@ -170,17 +199,21 @@ function stopHolding(event) {
     
     setTimeout(() => {
         const finalTranscript = currentTranscript.trim();
+        console.log('📝 Final transcript:', finalTranscript);
+        
         if (finalTranscript) {
             console.log('📝 You said:', finalTranscript);
             document.getElementById('visualizer').classList.remove('listening');
             
             if (!setupComplete && setupStage > 0) {
+                console.log('🔄 Handling setup response for stage:', setupStage);
                 handleSetupResponse(finalTranscript);
             } else if (setupComplete) {
+                console.log('💬 Getting AI response');
                 getAIResponse(finalTranscript);
             }
         } else {
-            console.log('No speech detected');
+            console.log('⚠️ No speech detected');
             document.getElementById('visualizer').classList.remove('listening');
             
             if (setupStage > 0) {
@@ -191,11 +224,11 @@ function stopHolding(event) {
                 document.getElementById('talkBtn').disabled = false;
             }
         }
-    }, 400);
+    }, 600);
 }
 
 function handleSetupResponse(response) {
-    console.log(`Setup stage ${setupStage} response:`, response);
+    console.log(`📋 Setup stage ${setupStage} response:`, response);
     
     if (setupStage === 3) {
         const lowerResponse = response.toLowerCase();
@@ -217,9 +250,11 @@ function handleSetupResponse(response) {
     document.getElementById('talkBtn').disabled = true;
     document.getElementById('talkBtn').textContent = 'Installing...';
     
+    console.log('⏱️ Waiting 600ms before continuing...');
     setTimeout(() => {
+        console.log('▶️ Calling continueSetup()');
         continueSetup();
-    }, 500);
+    }, 600);
 }
 
 function handleSpeechResult(event) {
@@ -227,6 +262,7 @@ function handleSpeechResult(event) {
         const transcript = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
             currentTranscript += transcript + ' ';
+            console.log('✅ Captured:', transcript);
         }
     }
 }
@@ -300,7 +336,13 @@ async function speakWithVoice(text, voiceType) {
     document.getElementById('talkBtn').textContent = voiceType === 'setup' ? 'Installing...' : 'Speaking...';
 
     try {
+        // Ensure audio context is ready
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        
         if (audioContext.state === 'suspended') {
+            console.log('🔓 Resuming audio context...');
             await audioContext.resume();
         }
 
@@ -323,7 +365,9 @@ async function speakWithVoice(text, voiceType) {
             bytes[i] = binaryString.charCodeAt(i);
         }
         
+        console.log('🎵 Decoding audio...');
         const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
+        
         currentAudioSource = audioContext.createBufferSource();
         currentAudioSource.buffer = audioBuffer;
         currentAudioSource.connect(audioContext.destination);
@@ -343,7 +387,7 @@ async function speakWithVoice(text, voiceType) {
             };
             
             currentAudioSource.start(0);
-            console.log(`▶️ Playing audio`);
+            console.log(`▶️ Playing audio (${audioBuffer.duration.toFixed(1)}s)`);
         });
 
     } catch (error) {
