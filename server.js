@@ -10,7 +10,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
-// Chat endpoint
+// Chat endpoint - Using modern Responses API
 app.post('/api/chat', async (req, res) => {
     console.log('📨 Received chat request');
     
@@ -22,32 +22,61 @@ app.post('/api/chat', async (req, res) => {
             return res.status(500).json({ error: 'OpenAI API key not configured' });
         }
 
-        console.log('🤖 Calling OpenAI with GPT-3.5-turbo...');
+        console.log('🤖 Calling OpenAI Responses API with gpt-4o-mini...');
 
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        const response = await fetch('https://api.openai.com/v1/responses', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
             },
             body: JSON.stringify({
-                model: 'gpt-3.5-turbo',
-                messages: messages,
-                temperature: 0.9,
-                max_tokens: 150
+                model: 'gpt-4o-mini',
+                input: messages.map(m => ({
+                    role: m.role,
+                    content: [{ type: 'text', text: m.content }]
+                })),
+                temperature: 0.7,
+                max_output_tokens: 256
             })
         });
 
+        console.log('📊 OpenAI Status:', response.status);
+
         const data = await response.json();
+        console.log('📦 OpenAI Response:', JSON.stringify(data, null, 2));
         
         if (data.error) {
             console.error('❌ OpenAI error:', data.error);
-            return res.status(500).json({ error: data.error.message });
+            
+            if (data.error.code === 'insufficient_quota') {
+                return res.status(500).json({ 
+                    error: 'OpenAI API quota exceeded. Please add credits at https://platform.openai.com/account/billing' 
+                });
+            }
+            
+            if (data.error.code === 'invalid_api_key') {
+                return res.status(500).json({ 
+                    error: 'Invalid OpenAI API key. Please check your key at https://platform.openai.com/api-keys' 
+                });
+            }
+            
+            return res.status(500).json({ error: data.error.message || 'OpenAI API error' });
         }
 
-        const message = data.choices[0].message.content;
-        console.log('✅ OpenAI response:', message);
-        res.json({ message: message });
+        // Extract output from Responses API format
+        const output =
+            data.output_text ??
+            (data.output?.[0]?.content?.find(c => c.type === 'output_text')?.text) ??
+            data;
+        
+        if (typeof output !== 'string') {
+            console.error('❌ Unexpected Responses API shape:', data);
+            return res.status(500).json({ error: 'Invalid response from OpenAI' });
+        }
+
+        console.log('✅ OpenAI response:', output);
+        res.json({ message: output });
 
     } catch (error) {
         console.error('❌ Server Error:', error);
@@ -73,11 +102,11 @@ app.post('/api/tts', async (req, res) => {
         // Select voice based on type
         let VOICE_ID;
         if (voiceType === 'setup') {
-            VOICE_ID = 'GCH5LqLr0x1cLZVr5T10'; // YOUR CUSTOM MALE VOICE - Setup
+            VOICE_ID = 'GCH5LqLr0x1cLZVr5T10';
         } else if (voiceType === 'male') {
-            VOICE_ID = 'GCH5LqLr0x1cLZVr5T10'; // YOUR CUSTOM MALE VOICE - Companion
+            VOICE_ID = 'GCH5LqLr0x1cLZVr5T10';
         } else {
-            VOICE_ID = 'JSWO6cw2AyFE324d5kEr'; // Your custom female voice
+            VOICE_ID = 'JSWO6cw2AyFE324d5kEr';
         }
         
         console.log('🔊 Using voice ID:', VOICE_ID);
@@ -132,9 +161,9 @@ app.listen(PORT, () => {
     console.log(`✅ Server running on port ${PORT}`);
     console.log(`✅ OpenAI API Key: ${process.env.OPENAI_API_KEY ? '✓ Configured' : '✗ MISSING'}`);
     console.log(`✅ ElevenLabs API Key: ${process.env.ELEVENLABS_API_KEY ? '✓ Configured' : '✗ MISSING'}`);
-    console.log(`🤖 Using model: gpt-3.5-turbo`);
-    console.log(`🎤 Setup voice: GCH5LqLr0x1cLZVr5T10 (Your custom male voice)`);
-    console.log(`🎤 Male companion: GCH5LqLr0x1cLZVr5T10 (Your custom male voice)`);
-    console.log(`🎤 Female companion: JSWO6cw2AyFE324d5kEr (Your custom female voice)`);
+    console.log(`🤖 Using model: gpt-4o-mini (modern Responses API)`);
+    console.log(`🎤 Setup voice: GCH5LqLr0x1cLZVr5T10`);
+    console.log(`🎤 Male companion: GCH5LqLr0x1cLZVr5T10`);
+    console.log(`🎤 Female companion: JSWO6cw2AyFE324d5kEr`);
     console.log('='.repeat(50));
 });
