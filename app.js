@@ -7,14 +7,14 @@ let audioContext;
 let currentAudioSource;
 let setupComplete = false;
 let setupStage = 0;
-let selectedVoice = 'female'; // default
+let selectedVoice = 'female';
+let audioUnlocked = false;
 
 function initialize() {
     console.log('🎤 Initializing OS1...');
     console.log('📱 Mobile:', isMobile);
     
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    console.log('🔊 Audio context created');
+    // Don't create audio context yet on mobile - wait for user interaction
     
     if ('webkitSpeechRecognition' in window) {
         recognition = new webkitSpeechRecognition();
@@ -42,20 +42,47 @@ function initialize() {
     }, 1000);
 }
 
+function unlockAudio() {
+    if (audioUnlocked) return Promise.resolve();
+    
+    console.log('🔓 Unlocking audio for mobile...');
+    
+    // Create audio context on first user interaction
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        console.log('🔊 Audio context created');
+    }
+    
+    return audioContext.resume().then(() => {
+        // Play silent buffer to unlock audio on iOS
+        const buffer = audioContext.createBuffer(1, 1, 22050);
+        const source = audioContext.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioContext.destination);
+        source.start(0);
+        
+        audioUnlocked = true;
+        console.log('✅ Audio unlocked, state:', audioContext.state);
+        return Promise.resolve();
+    }).catch(err => {
+        console.error('❌ Failed to unlock audio:', err);
+        return Promise.reject(err);
+    });
+}
+
 function startSetup() {
     console.log('👋 Starting setup...');
     
     document.getElementById('talkBtn').disabled = true;
     document.getElementById('talkBtn').textContent = 'Installing...';
     
-    if (audioContext.state === 'suspended') {
-        audioContext.resume().then(() => {
-            console.log('🔊 Audio context resumed');
-            setTimeout(() => runSetup(), 300);
-        });
-    } else {
-        setTimeout(() => runSetup(), 300);
-    }
+    // Unlock audio first on mobile
+    unlockAudio().then(() => {
+        setTimeout(() => runSetup(), 500);
+    }).catch(err => {
+        alert('Audio initialization failed. Please refresh and try again.');
+        console.error('Audio unlock error:', err);
+    });
 }
 
 async function runSetup() {
@@ -71,7 +98,7 @@ async function runSetup() {
     
     // Question 1: Social or anti-social
     await speakWithVoice("Are you social or anti-social?", 'setup');
-    setupStage = 1; // Wait for answer
+    setupStage = 1;
     enableListening();
 }
 
@@ -79,7 +106,7 @@ async function continueSetup() {
     if (setupStage === 1) {
         // After social question, ask about mother
         await speakWithVoice("How's your relationship with your mother?", 'setup');
-        setupStage = 2; // Wait for answer
+        setupStage = 2;
         enableListening();
         
     } else if (setupStage === 2) {
@@ -89,7 +116,7 @@ async function continueSetup() {
         
         // Ask for voice preference
         await speakWithVoice("Would you like a male or female voice?", 'setup');
-        setupStage = 3; // Wait for voice selection
+        setupStage = 3;
         enableListening();
         
     } else if (setupStage === 3) {
@@ -97,7 +124,7 @@ async function continueSetup() {
         setupComplete = true;
         setupStage = 0;
         
-        const voiceType = selectedVoice; // 'male' or 'female'
+        const voiceType = selectedVoice;
         
         await speakWithVoice("Hi. How are you?", voiceType);
     }
@@ -169,10 +196,8 @@ function stopHolding(event) {
             document.getElementById('visualizer').classList.remove('listening');
             
             if (!setupComplete && setupStage > 0) {
-                // During setup - handle responses
                 handleSetupResponse(finalTranscript);
             } else if (setupComplete) {
-                // Normal conversation
                 getAIResponse(finalTranscript);
             }
         } else {
@@ -194,7 +219,6 @@ function handleSetupResponse(response) {
     console.log(`Setup stage ${setupStage} response:`, response);
     
     if (setupStage === 3) {
-        // Voice selection
         const lowerResponse = response.toLowerCase();
         if (lowerResponse.includes('male') && !lowerResponse.includes('female')) {
             selectedVoice = 'male';
@@ -203,13 +227,11 @@ function handleSetupResponse(response) {
             selectedVoice = 'female';
             console.log('✅ User selected: Female voice');
         } else {
-            // Default to female if unclear
             selectedVoice = 'female';
             console.log('⚠️ Unclear response, defaulting to female voice');
         }
     }
     
-    // Disable button and continue setup
     document.getElementById('talkBtn').disabled = true;
     document.getElementById('talkBtn').textContent = 'Installing...';
     
@@ -282,8 +304,11 @@ async function getAIResponse(userMessage) {
 async function speakWithVoice(text, voiceType) {
     console.log(`🔊 Generating speech (${voiceType}):`, text.substring(0, 40) + '...');
     
+    // Stop any current audio
     if (currentAudioSource) {
-        currentAudioSource.stop();
+        try {
+            currentAudioSource.stop();
+        } catch (e) {}
         currentAudioSource = null;
     }
     
@@ -310,14 +335,30 @@ async function speakWithVoice(text, voiceType) {
         }
 
         const data = await response.json();
+        console.log('✅ Audio data received');
 
+        // Ensure audio context exists and is running
+        if (!audioContext) {
+            await unlockAudio();
+        }
+        
+        if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+            console.log('🔊 Audio context resumed');
+        }
+
+        // Convert base64 to audio buffer
         const binaryString = atob(data.audio);
         const bytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
             bytes[i] = binaryString.charCodeAt(i);
         }
         
+        console.log('🎵 Decoding audio...');
         const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
+        
+        console.log(`✅ Audio decoded (${audioBuffer.duration.toFixed(1)}s)`);
+        
         currentAudioSource = audioContext.createBufferSource();
         currentAudioSource.buffer = audioBuffer;
         currentAudioSource.connect(audioContext.destination);
@@ -364,6 +405,13 @@ document.addEventListener('touchend', (e) => {
     }
     lastTouchEnd = now;
 }, false);
+
+// Prevent pull-to-refresh
+document.body.addEventListener('touchmove', (e) => {
+    if (e.target === document.body) {
+        e.preventDefault();
+    }
+}, { passive: false });
 
 window.onload = () => {
     console.log('🚀 Page loaded');
