@@ -12,17 +12,17 @@ app.use(express.static(path.join(__dirname)));
 
 // Chat endpoint
 app.post('/api/chat', async (req, res) => {
-    console.log('Received chat request');
+    console.log('📨 Received chat request');
     
     try {
         const { messages } = req.body;
 
         if (!process.env.OPENAI_API_KEY) {
-            console.error('No OpenAI API key found');
+            console.error('❌ No OpenAI API key found');
             return res.status(500).json({ error: 'OpenAI API key not configured' });
         }
 
-        console.log('Calling OpenAI...');
+        console.log('🤖 Calling OpenAI...');
 
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -39,50 +39,52 @@ app.post('/api/chat', async (req, res) => {
         });
 
         const data = await response.json();
-        console.log('OpenAI response received');
         
         if (data.error) {
-            console.error('OpenAI error:', data.error);
+            console.error('❌ OpenAI error:', data.error);
             return res.status(500).json({ error: data.error.message });
         }
 
         const message = data.choices[0].message.content;
-        console.log('Sending response:', message);
+        console.log('✅ OpenAI response:', message);
         res.json({ message: message });
 
     } catch (error) {
-        console.error('Server Error:', error);
+        console.error('❌ Server Error:', error);
         res.status(500).json({ error: error.message || 'Internal server error' });
     }
 });
 
-// ElevenLabs TTS endpoint - supports both male and female voices
+// ElevenLabs TTS endpoint
 app.post('/api/tts', async (req, res) => {
-    console.log('Received TTS request');
+    console.log('📨 Received TTS request');
     
     try {
         const { text, voiceType } = req.body;
+        
+        console.log('📝 Text:', text.substring(0, 50) + '...');
+        console.log('🎤 Voice type:', voiceType);
 
         if (!process.env.ELEVENLABS_API_KEY) {
-            console.error('No ElevenLabs API key found');
+            console.error('❌ No ElevenLabs API key found');
             return res.status(500).json({ error: 'ElevenLabs API key not configured' });
         }
 
-        // Select voice based on setup stage
+        // Select voice
         let VOICE_ID;
         if (voiceType === 'setup') {
-            // Male voice for setup (choose one):
-            VOICE_ID = 'GCH5LqLr0x1cLZVr5T10'; // Adam - deep male voice
-            // Or try: 'TxGEqnHWrfWFTfGW9XjX' (Josh - young male)
-            // Or try: 'VR6AewLTigWG4xSOukaG' (Arnold - mature male)
+            VOICE_ID = 'ErXwobaYiN019PkySvjV'; // Antoni - American male
         } else {
-            // Your custom female voice for OS1
-            VOICE_ID = 'JSWO6cw2AyFE324d5kEr';
+            VOICE_ID = 'JSWO6cw2AyFE324d5kEr'; // Your custom female voice
         }
         
-        console.log(`Calling ElevenLabs TTS with ${voiceType} voice (${VOICE_ID})...`);
+        console.log('🔊 Using voice ID:', VOICE_ID);
+        console.log('🔑 API Key present:', process.env.ELEVENLABS_API_KEY ? 'YES' : 'NO');
 
-        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`, {
+        const elevenLabsUrl = `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`;
+        console.log('📡 Calling:', elevenLabsUrl);
+
+        const response = await fetch(elevenLabsUrl, {
             method: 'POST',
             headers: {
                 'Accept': 'audio/mpeg',
@@ -101,20 +103,25 @@ app.post('/api/tts', async (req, res) => {
             })
         });
 
+        console.log('📊 ElevenLabs response status:', response.status);
+
         if (!response.ok) {
             const errorText = await response.text();
-            console.error('ElevenLabs error:', errorText);
-            throw new Error('ElevenLabs API error: ' + errorText);
+            console.error('❌ ElevenLabs error response:', errorText);
+            return res.status(response.status).json({ 
+                error: `ElevenLabs API error (${response.status}): ${errorText}` 
+            });
         }
 
         const audioBuffer = await response.arrayBuffer();
-        console.log(`✅ Audio generated with ${voiceType} voice, size:`, audioBuffer.byteLength);
+        console.log('✅ Audio generated, size:', audioBuffer.byteLength, 'bytes');
 
         const audioBase64 = Buffer.from(audioBuffer).toString('base64');
         res.json({ audio: audioBase64 });
 
     } catch (error) {
-        console.error('❌ TTS Error:', error);
+        console.error('❌ TTS Error:', error.message);
+        console.error('❌ Full error:', error);
         res.status(500).json({ error: error.message || 'TTS generation failed' });
     }
 });
@@ -124,9 +131,11 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
+    console.log('='.repeat(50));
     console.log(`✅ Server running on port ${PORT}`);
-    console.log(`✅ OpenAI API Key: ${process.env.OPENAI_API_KEY ? 'Configured' : 'MISSING'}`);
-    console.log(`✅ ElevenLabs API Key: ${process.env.ELEVENLABS_API_KEY ? 'Configured' : 'MISSING'}`);
-    console.log(`🎤 Female voice ID: JSWO6cw2AyFE324d5kEr`);
-    console.log(`🎤 Male setup voice ID: pNInz6obpgDQGcFmaJgB`);
+    console.log(`✅ OpenAI API Key: ${process.env.OPENAI_API_KEY ? '✓ Configured' : '✗ MISSING'}`);
+    console.log(`✅ ElevenLabs API Key: ${process.env.ELEVENLABS_API_KEY ? '✓ Configured' : '✗ MISSING'}`);
+    console.log(`🎤 Setup voice: ErXwobaYiN019PkySvjV (Antoni)`);
+    console.log(`🎤 OS1 voice: JSWO6cw2AyFE324d5kEr (Your custom voice)`);
+    console.log('='.repeat(50));
 });
