@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const fetch = require('node-fetch');
 require('dotenv').config();
 
 const app = express();
@@ -94,15 +93,16 @@ app.post('/api/tts', async (req, res) => {
         });
 
         if (!response.ok) {
-            const error = await response.json();
-            console.error('ElevenLabs error:', error);
-            throw new Error(error.detail?.message || 'ElevenLabs API error');
+            const errorText = await response.text();
+            console.error('ElevenLabs error:', errorText);
+            throw new Error('ElevenLabs API error: ' + errorText);
         }
 
-        const audioBuffer = await response.buffer();
-        console.log('✅ Audio generated with your voice, size:', audioBuffer.length);
+        const audioBuffer = await response.arrayBuffer();
+        console.log('✅ Audio generated with your voice, size:', audioBuffer.byteLength);
 
-        const audioBase64 = audioBuffer.toString('base64');
+        // Convert ArrayBuffer to base64
+        const audioBase64 = Buffer.from(audioBuffer).toString('base64');
         res.json({ audio: audioBase64 });
 
     } catch (error) {
