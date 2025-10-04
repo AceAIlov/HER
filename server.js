@@ -72,7 +72,7 @@ app.post('/api/tts', async (req, res) => {
         let VOICE_ID;
         if (voiceType === 'setup') {
             // Male voice for setup (choose one):
-            VOICE_ID = 'ErXwobaYiN019PkySvjV'; // Adam - deep male voice
+            VOICE_ID = 'GCH5LqLr0x1cLZVr5T10'; // Adam - deep male voice
             // Or try: 'TxGEqnHWrfWFTfGW9XjX' (Josh - young male)
             // Or try: 'VR6AewLTigWG4xSOukaG' (Arnold - mature male)
         } else {
