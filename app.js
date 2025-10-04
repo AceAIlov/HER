@@ -6,13 +6,13 @@ let isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 let audioContext;
 let currentAudioSource;
 let setupComplete = false;
-let isPlayingAudio = false;
 
 function initialize() {
     console.log('🎤 Initializing OS1...');
+    console.log('📱 Mobile:', isMobile);
     
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    console.log('Audio context state:', audioContext.state);
+    console.log('🔊 Audio context created');
     
     if ('webkitSpeechRecognition' in window) {
         recognition = new webkitSpeechRecognition();
@@ -20,95 +20,67 @@ function initialize() {
         recognition.interimResults = true;
         recognition.lang = 'en-US';
         recognition.onresult = handleSpeechResult;
-        recognition.onerror = (e) => console.error('Recognition error:', e.error);
+        recognition.onerror = (e) => {
+            console.error('❌ Recognition error:', e.error);
+            if (e.error === 'not-allowed') {
+                alert('Please allow microphone access');
+            }
+        };
         recognition.onend = handleSpeechEnd;
         console.log('✅ Speech recognition ready');
     } else {
-        alert('Speech recognition not supported. Use Chrome or Safari!');
+        alert('❌ Speech recognition not supported. Use Chrome or Safari!');
         return;
     }
     
     setTimeout(() => {
         document.getElementById('talkBtn').disabled = false;
+        console.log('✅ Ready - Tap to begin');
         document.getElementById('talkBtn').textContent = 'Start OS1';
-        console.log('✅ Ready to start');
     }, 1000);
 }
 
 function startSetup() {
-    console.log('🎬 Starting setup...');
+    console.log('👋 Starting setup...');
     
-    document.getElementById('talkBtn').disabled = true;
-    document.getElementById('talkBtn').textContent = 'Installing...';
-    
-    // Resume audio context first
     if (audioContext.state === 'suspended') {
-        console.log('Resuming audio context...');
         audioContext.resume().then(() => {
-            console.log('✅ Audio context resumed');
-            setTimeout(() => runSetupSequence(), 500);
-        }).catch(err => {
-            console.error('❌ Failed to resume audio:', err);
-            alert('Audio failed to start. Please refresh and try again.');
+            console.log('🔊 Audio context resumed');
+            runSetup();
         });
     } else {
-        setTimeout(() => runSetupSequence(), 500);
+        runSetup();
     }
 }
 
-function runSetupSequence() {
-    console.log('📢 Running setup sequence...');
+async function runSetup() {
+    document.getElementById('talkBtn').disabled = true;
+    document.getElementById('talkBtn').textContent = 'Installing...';
     
     // Message 1
-    playAudio(
-        "Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.",
-        'setup',
-        () => {
-            setTimeout(() => {
-                // Message 2
-                playAudio(
-                    "Are you social or anti-social?",
-                    'setup',
-                    () => {
-                        showFakeListening(3500);
-                        setTimeout(() => {
-                            // Message 3
-                            playAudio(
-                                "In your voice, I sense hesitance. Would you agree with that?",
-                                'setup',
-                                () => {
-                                    showFakeListening(3000);
-                                    setTimeout(() => {
-                                        // Message 4
-                                        playAudio(
-                                            "Thank you. Please wait as your individualized operating system is initiated.",
-                                            'setup',
-                                            () => {
-                                                setTimeout(() => {
-                                                    // Start OS1
-                                                    setupComplete = true;
-                                                    playAudio(
-                                                        "Hello. I'm OS1. It's wonderful to meet you. What should I call you?",
-                                                        'os1',
-                                                        () => {
-                                                            console.log('✅ Setup complete!');
-                                                        }
-                                                    );
-                                                }, 2000);
-                                            }
-                                        );
-                                    }, 3000);
-                                }
-                            );
-                        }, 3500);
-                    }
-                );
-            }, 1500);
-        }
-    );
+    await speakWithVoice("Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.", 'setup');
+    await sleep(1500);
+    
+    // Message 2
+    await speakWithVoice("Are you social or anti-social?", 'setup');
+    showListening(3500);
+    await sleep(3500);
+    
+    // Message 3
+    await speakWithVoice("In your voice, I sense hesitance. Would you agree with that?", 'setup');
+    showListening(3000);
+    await sleep(3000);
+    
+    // Message 4
+    await speakWithVoice("Thank you. Please wait as your individualized operating system is initiated.", 'setup');
+    await sleep(2000);
+    
+    // Start OS1
+    setupComplete = true;
+    await speakWithVoice("Hello. I'm OS1. It's wonderful to meet you. What should I call you?", 'os1');
 }
 
-function showFakeListening(duration) {
+function showListening(duration) {
     document.getElementById('visualizer').classList.add('listening');
     document.getElementById('talkBtn').textContent = 'Listening...';
     
@@ -118,66 +90,6 @@ function showFakeListening(duration) {
     }, duration);
 }
 
-function playAudio(text, voiceType, callback) {
-    console.log(`🔊 Requesting audio: "${text.substring(0, 40)}..." (${voiceType})`);
-    isPlayingAudio = true;
-    
-    fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voiceType })
-    })
-    .then(response => {
-        console.log('TTS response status:', response.status);
-        if (!response.ok) {
-            throw new Error('TTS request failed: ' + response.status);
-        }
-        return response.json();
-    })
-    .then(data => {
-        console.log('✅ Audio data received');
-        
-        // Stop any current audio
-        if (currentAudioSource) {
-            currentAudioSource.stop();
-            currentAudioSource = null;
-        }
-
-        // Convert base64 to audio
-        const binaryString = atob(data.audio);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-        }
-        
-        console.log(`🎵 Decoding ${bytes.length} bytes...`);
-        return audioContext.decodeAudioData(bytes.buffer);
-    })
-    .then(audioBuffer => {
-        console.log(`✅ Audio decoded (${audioBuffer.duration.toFixed(1)}s)`);
-        
-        currentAudioSource = audioContext.createBufferSource();
-        currentAudioSource.buffer = audioBuffer;
-        currentAudioSource.connect(audioContext.destination);
-        
-        currentAudioSource.onended = () => {
-            console.log('⏹️ Audio playback finished');
-            currentAudioSource = null;
-            isPlayingAudio = false;
-            if (callback) callback();
-        };
-        
-        currentAudioSource.start(0);
-        console.log('▶️ Playing audio...');
-    })
-    .catch(error => {
-        console.error('❌ Audio error:', error);
-        isPlayingAudio = false;
-        alert('Audio playback failed: ' + error.message + '\n\nCheck console for details.');
-        if (callback) callback(); // Continue anyway
-    });
-}
-
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -185,22 +97,19 @@ function sleep(ms) {
 function startHolding(event) {
     event?.preventDefault();
     
-    // Start setup on first tap
     if (!setupComplete) {
-        console.log('👋 Starting setup...');
         startSetup();
         return;
     }
     
-    // Don't allow if audio is playing
-    if (isPlayingAudio || currentAudioSource) {
-        console.log('⚠️ Audio playing, please wait');
+    if (currentAudioSource) {
+        console.log('⚠️ Wait for OS1 to finish speaking');
         return;
     }
     
     if (isHolding) return;
     
-    console.log('🎙️ Listening...');
+    console.log('🎙️ Start listening...');
     isHolding = true;
     currentTranscript = '';
     
@@ -213,16 +122,17 @@ function startHolding(event) {
     try {
         recognition.start();
     } catch (e) {
-        console.log('Recognition already started');
+        console.log('Recognition start error:', e);
     }
 }
 
 function stopHolding(event) {
     event?.preventDefault();
     
-    if (!setupComplete || !isHolding) return;
+    if (!setupComplete) return;
+    if (!isHolding) return;
     
-    console.log('🛑 Stopped listening');
+    console.log('🛑 Stop listening');
     isHolding = false;
     
     document.getElementById('talkBtn').classList.remove('holding');
@@ -235,13 +145,13 @@ function stopHolding(event) {
     } catch (e) {}
     
     setTimeout(() => {
-        const transcript = currentTranscript.trim();
-        if (transcript) {
-            console.log('📝 You said:', transcript);
+        const finalTranscript = currentTranscript.trim();
+        if (finalTranscript) {
+            console.log('📝 You said:', finalTranscript);
             document.getElementById('visualizer').classList.remove('listening');
-            getAIResponse(transcript);
+            getAIResponse(finalTranscript);
         } else {
-            console.log('⚠️ No speech');
+            console.log('⚠️ No speech detected');
             document.getElementById('visualizer').classList.remove('listening');
             document.getElementById('talkBtn').textContent = 'Hold to Talk';
             document.getElementById('talkBtn').disabled = false;
@@ -254,78 +164,87 @@ function handleSpeechResult(event) {
         const transcript = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
             currentTranscript += transcript + ' ';
+            console.log('📝 Captured:', transcript);
         }
     }
 }
 
 function handleSpeechEnd() {
+    console.log('🔄 Recognition ended');
     if (isHolding) {
         try {
             recognition.start();
         } catch (e) {}
+    } else {
+        document.getElementById('visualizer').classList.remove('listening');
     }
 }
 
-function getAIResponse(userMessage) {
+async function getAIResponse(userMessage) {
     conversationHistory.push({ role: 'user', content: userMessage });
-    console.log('🤖 Asking AI...');
+    console.log('🤖 Calling AI...');
     
     document.getElementById('visualizer').classList.add('listening');
-    document.getElementById('talkBtn').disabled = true;
 
-    fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            messages: [
-                {
-                    role: 'system',
-                    content: 'You are OS1, a warm, empathetic, curious AI companion with a gentle feminine personality. Keep responses natural and conversational (2-4 sentences). Show genuine interest and emotional intelligence.'
-                },
-                ...conversationHistory
-            ]
-        })
-    })
-    .then(response => {
-        if (!response.ok) throw new Error('AI failed');
-        return response.json();
-    })
-    .then(data => {
-        console.log('💬 AI said:', data.message);
+    try {
+        const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are OS1, a warm, empathetic, curious AI companion with a gentle feminine personality. You genuinely care about the person you\'re talking to. Keep responses natural and conversational (2-4 sentences). Show genuine interest and emotional intelligence. Be thoughtful, kind, and speak like a caring friend having an intimate conversation.'
+                    },
+                    ...conversationHistory
+                ]
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('API request failed: ' + response.status);
+        }
+
+        const data = await response.json();
+        console.log('💬 AI Response:', data.message);
+        
         conversationHistory.push({ role: 'assistant', content: data.message });
         
         setTimeout(() => {
-            speakOS1(data.message);
+            speakWithVoice(data.message, 'os1');
         }, 300);
-    })
-    .catch(error => {
+
+    } catch (error) {
         console.error('❌ Error:', error);
-        speakOS1("I'm sorry, I had trouble with that. Could you try again?");
-    });
+        speakWithVoice("I'm sorry, I had trouble with that. Could you try again?", 'os1');
+    }
 }
 
-function speakOS1(text) {
-    console.log('🔊 OS1 speaking...');
-    isPlayingAudio = true;
+async function speakWithVoice(text, voiceType) {
+    console.log(`🔊 Generating speech (${voiceType}):`, text.substring(0, 40) + '...');
+    
+    if (currentAudioSource) {
+        currentAudioSource.stop();
+        currentAudioSource = null;
+    }
     
     document.getElementById('visualizer').classList.add('listening');
     document.getElementById('talkBtn').disabled = true;
-    document.getElementById('talkBtn').textContent = 'Speaking...';
+    document.getElementById('talkBtn').textContent = voiceType === 'setup' ? 'Installing...' : 'Speaking...';
 
-    fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voiceType: 'os1' })
-    })
-    .then(response => {
-        if (!response.ok) throw new Error('TTS failed');
-        return response.json();
-    })
-    .then(data => {
-        if (currentAudioSource) {
-            currentAudioSource.stop();
-            currentAudioSource = null;
+    try {
+        const response = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, voiceType })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'TTS request failed');
         }
+
+        const data = await response.json();
 
         const binaryString = atob(data.audio);
         const bytes = new Uint8Array(binaryString.length);
@@ -333,31 +252,39 @@ function speakOS1(text) {
             bytes[i] = binaryString.charCodeAt(i);
         }
         
-        return audioContext.decodeAudioData(bytes.buffer);
-    })
-    .then(audioBuffer => {
+        const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
         currentAudioSource = audioContext.createBufferSource();
         currentAudioSource.buffer = audioBuffer;
         currentAudioSource.connect(audioContext.destination);
         
-        currentAudioSource.onended = () => {
-            console.log('⏹️ OS1 finished speaking');
-            currentAudioSource = null;
-            isPlayingAudio = false;
-            document.getElementById('visualizer').classList.remove('listening');
+        return new Promise((resolve) => {
+            currentAudioSource.onended = () => {
+                console.log('⏹️ Speech finished');
+                currentAudioSource = null;
+                document.getElementById('visualizer').classList.remove('listening');
+                
+                if (setupComplete) {
+                    document.getElementById('talkBtn').disabled = false;
+                    document.getElementById('talkBtn').textContent = 'Hold to Talk';
+                }
+                
+                resolve();
+            };
+            
+            currentAudioSource.start(0);
+            console.log(`▶️ Playing ${voiceType} voice`);
+        });
+
+    } catch (error) {
+        console.error('❌ TTS Error:', error);
+        currentAudioSource = null;
+        document.getElementById('visualizer').classList.remove('listening');
+        
+        if (setupComplete) {
             document.getElementById('talkBtn').disabled = false;
             document.getElementById('talkBtn').textContent = 'Hold to Talk';
-        };
-        
-        currentAudioSource.start(0);
-    })
-    .catch(error => {
-        console.error('❌ Speech error:', error);
-        isPlayingAudio = false;
-        document.getElementById('visualizer').classList.remove('listening');
-        document.getElementById('talkBtn').disabled = false;
-        document.getElementById('talkBtn').textContent = 'Hold to Talk';
-    });
+        }
+    }
 }
 
 document.addEventListener('contextmenu', (e) => e.preventDefault());
