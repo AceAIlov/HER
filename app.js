@@ -43,51 +43,46 @@ function initialize() {
 function startSetup() {
     console.log('👋 Starting setup...');
     
+    document.getElementById('talkBtn').disabled = true;
+    document.getElementById('talkBtn').textContent = 'Installing...';
+    
     if (audioContext.state === 'suspended') {
         audioContext.resume().then(() => {
             console.log('🔊 Audio context resumed');
-            runSetup();
+            setTimeout(() => runSetup(), 300);
         });
     } else {
-        runSetup();
+        setTimeout(() => runSetup(), 300);
     }
 }
 
 async function runSetup() {
-    document.getElementById('talkBtn').disabled = true;
-    document.getElementById('talkBtn').textContent = 'Installing...';
+    console.log('📢 Running setup...');
     
-    // Message 1
-    await speakWithVoice("Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.", 'setup');
-    await sleep(1500);
+    // Message 1 - Welcome
+    await speakWithVoice(
+        "Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.",
+        'setup'
+    );
     
-    // Message 2
-    await speakWithVoice("Are you social or anti-social?", 'setup');
-    showListening(3500);
-    await sleep(3500);
-    
-    // Message 3
-    await speakWithVoice("In your voice, I sense hesitance. Would you agree with that?", 'setup');
-    showListening(3000);
-    await sleep(3000);
-    
-    // Message 4
-    await speakWithVoice("Thank you. Please wait as your individualized operating system is initiated.", 'setup');
     await sleep(2000);
     
-    // Start OS1
-    setupComplete = true;
-    await speakWithVoice("Hello. I'm OS1. It's wonderful to meet you. What should I call you?", 'os1');
-}
-
-function showListening(duration) {
-    document.getElementById('visualizer').classList.add('listening');
-    document.getElementById('talkBtn').textContent = 'Listening...';
+    // Message 2 - Initializing
+    await speakWithVoice(
+        "Thank you. Please wait as your individualized operating system is initiated.",
+        'setup'
+    );
     
-    setTimeout(() => {
-        document.getElementById('visualizer').classList.remove('listening');
-        document.getElementById('talkBtn').textContent = 'Installing...';
-    }, duration);
+    await sleep(2000);
+    
+    // Start OS1 with female voice
+    setupComplete = true;
+    console.log('✅ Setup complete, starting OS1...');
+    
+    await speakWithVoice(
+        "Hi. How are you?",
+        'os1'
+    );
 }
 
 function sleep(ms) {
@@ -241,6 +236,7 @@ async function speakWithVoice(text, voiceType) {
 
         if (!response.ok) {
             const errorData = await response.json();
+            console.error('TTS Error:', errorData);
             throw new Error(errorData.error || 'TTS request failed');
         }
 
@@ -284,6 +280,8 @@ async function speakWithVoice(text, voiceType) {
             document.getElementById('talkBtn').disabled = false;
             document.getElementById('talkBtn').textContent = 'Hold to Talk';
         }
+        
+        throw error;
     }
 }
 
