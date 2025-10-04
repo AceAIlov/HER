@@ -73,7 +73,7 @@ app.post('/api/tts', async (req, res) => {
         // Select voice
         let VOICE_ID;
         if (voiceType === 'setup') {
-            VOICE_ID = 'ErXwobaYiN019PkySvjV'; // Antoni - American male
+            VOICE_ID = 'GCH5LqLr0x1cLZVr5T10'; // Antoni - American male
         } else {
             VOICE_ID = 'JSWO6cw2AyFE324d5kEr'; // Your custom female voice
         }
@@ -135,7 +135,7 @@ app.listen(PORT, () => {
     console.log(`✅ Server running on port ${PORT}`);
     console.log(`✅ OpenAI API Key: ${process.env.OPENAI_API_KEY ? '✓ Configured' : '✗ MISSING'}`);
     console.log(`✅ ElevenLabs API Key: ${process.env.ELEVENLABS_API_KEY ? '✓ Configured' : '✗ MISSING'}`);
-    console.log(`🎤 Setup voice: ErXwobaYiN019PkySvjV (Antoni)`);
+    console.log(`🎤 Setup voice: GCH5LqLr0x1cLZVr5T10 (Antoni)`);
     console.log(`🎤 OS1 voice: JSWO6cw2AyFE324d5kEr (Your custom voice)`);
     console.log('='.repeat(50));
 });
