@@ -32,20 +32,6 @@
             align-items: center;
             color: #F5F5DC;
             touch-action: manipulation;
-            position: relative;
-        }
-
-        /* Beige border surround */
-        body::before {
-            content: '';
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            border: 20px solid #F5F5DC;
-            pointer-events: none;
-            z-index: 0;
         }
 
         .container {
@@ -58,8 +44,6 @@
             align-items: center;
             justify-content: center;
             height: 100vh;
-            position: relative;
-            z-index: 1;
         }
 
         h1 {
@@ -164,10 +148,6 @@
 
         /* Mobile landscape */
         @media (orientation: landscape) and (max-height: 600px) {
-            body::before {
-                border-width: 10px;
-            }
-            
             .container {
                 padding: 10px;
             }
@@ -190,20 +170,9 @@
 
         /* Small phones */
         @media (max-width: 375px) {
-            body::before {
-                border-width: 15px;
-            }
-            
             h1 {
                 font-size: 3em;
                 letter-spacing: 8px;
-            }
-        }
-
-        /* Very small screens */
-        @media (max-width: 320px) {
-            body::before {
-                border-width: 10px;
             }
         }
 
