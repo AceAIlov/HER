@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#ffb6c1">
+    <meta name="theme-color" content="#B22222">
     <title>OS1</title>
     <style>
         * {
@@ -26,12 +26,26 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #ffd1dc 0%, #ffb6c1 50%, #ff69b4 100%);
+            background: #B22222; /* Warm terracotta red */
             display: flex;
             justify-content: center;
             align-items: center;
-            color: #5a3a4a;
+            color: #F5F5DC;
             touch-action: manipulation;
+            position: relative;
+        }
+
+        /* Beige border surround */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border: 20px solid #F5F5DC;
+            pointer-events: none;
+            z-index: 0;
         }
 
         .container {
@@ -44,14 +58,17 @@
             align-items: center;
             justify-content: center;
             height: 100vh;
+            position: relative;
+            z-index: 1;
         }
 
         h1 {
             font-size: clamp(3em, 12vw, 5em);
             font-weight: 200;
             letter-spacing: clamp(8px, 3vw, 15px);
-            color: #8b3a62;
+            color: #F5F5DC;
             margin-bottom: clamp(30px, 8vh, 60px);
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
         }
 
         .visualizer {
@@ -65,7 +82,7 @@
             width: 100%;
             height: 100%;
             border-radius: 50%;
-            background: rgba(255, 105, 180, 0.3);
+            background: rgba(245, 245, 220, 0.2); /* Beige pulse */
             position: absolute;
             animation: pulse 2s ease-in-out infinite;
         }
@@ -110,9 +127,9 @@
         }
 
         button {
-            background: rgba(255, 182, 193, 0.4);
-            border: 3px solid #ff69b4;
-            color: #8b3a62;
+            background: rgba(245, 245, 220, 0.15);
+            border: 3px solid #F5F5DC;
+            color: #F5F5DC;
             padding: clamp(20px, 5vw, 25px) clamp(40px, 12vw, 60px);
             font-size: clamp(1.1em, 4vw, 1.3em);
             border-radius: 60px;
@@ -126,12 +143,18 @@
             touch-action: manipulation;
             position: relative;
             min-width: 200px;
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+        }
+
+        button:hover {
+            background: rgba(245, 245, 220, 0.25);
+            transform: scale(1.05);
         }
 
         button:active, button.holding {
-            background: rgba(255, 105, 180, 0.8);
+            background: rgba(245, 245, 220, 0.35);
             transform: scale(0.95);
-            border-color: #ff1493;
+            border-color: #FFF8DC;
         }
 
         button:disabled {
@@ -141,6 +164,10 @@
 
         /* Mobile landscape */
         @media (orientation: landscape) and (max-height: 600px) {
+            body::before {
+                border-width: 10px;
+            }
+            
             .container {
                 padding: 10px;
             }
@@ -163,9 +190,20 @@
 
         /* Small phones */
         @media (max-width: 375px) {
+            body::before {
+                border-width: 15px;
+            }
+            
             h1 {
                 font-size: 3em;
                 letter-spacing: 8px;
+            }
+        }
+
+        /* Very small screens */
+        @media (max-width: 320px) {
+            body::before {
+                border-width: 10px;
             }
         }
 
