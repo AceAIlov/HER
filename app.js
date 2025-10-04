@@ -12,19 +12,19 @@ let setupComplete = false;
 const setupScript = [
     {
         text: "Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.",
-        pauseAfter: 2000
+        pauseAfter: 1500
     },
     {
         text: "Are you social or anti-social?",
-        pauseAfter: 5000  // 5 seconds for user to "answer"
+        pauseAfter: 3500  // 3.5 seconds for user to "answer"
     },
     {
         text: "In your voice, I sense hesitance. Would you agree with that?",
-        pauseAfter: 4000  // 4 seconds for user to "answer"
+        pauseAfter: 3000  // 3 seconds for user to "answer"
     },
     {
         text: "Thank you. Please wait as your individualized operating system is initiated.",
-        pauseAfter: 3000
+        pauseAfter: 2000
     }
 ];
 
@@ -70,41 +70,55 @@ function startSetup() {
     if (audioContext.state === 'suspended') {
         audioContext.resume().then(() => {
             console.log('🔊 Audio context resumed');
-            playSetupSequence();
+            setTimeout(() => playSetupSequence(), 500);
         });
     } else {
-        playSetupSequence();
+        setTimeout(() => playSetupSequence(), 500);
     }
 }
 
 async function playSetupSequence() {
-    // Play all setup messages with pauses
-    for (let i = 0; i < setupScript.length; i++) {
-        const step = setupScript[i];
-        console.log(`📢 Setup ${i + 1}/${setupScript.length}:`, step.text);
-        
-        // Play the audio
-        await speakWithVoiceAsync(step.text, 'setup');
-        
-        // Pause to let user "respond" (creates illusion of listening)
-        if (i === 1 || i === 2) {
-            // For questions, show "listening" animation during pause
-            document.getElementById('visualizer').classList.add('listening');
-            document.getElementById('talkBtn').textContent = 'Listening...';
+    try {
+        // Play all setup messages with pauses
+        for (let i = 0; i < setupScript.length; i++) {
+            const step = setupScript[i];
+            console.log(`📢 Setup ${i + 1}/${setupScript.length}:`, step.text);
+            
+            // Play the audio and wait for it to finish
+            try {
+                await speakWithVoiceAsync(step.text, 'setup');
+                console.log(`✅ Audio ${i + 1} finished playing`);
+            } catch (error) {
+                console.error(`❌ Error playing audio ${i + 1}:`, error);
+            }
+            
+            // Pause to let user "respond" (creates illusion of listening)
+            if (i === 1 || i === 2) {
+                // For questions, show "listening" animation during pause
+                document.getElementById('visualizer').classList.add('listening');
+                document.getElementById('talkBtn').textContent = 'Listening...';
+            }
+            
+            console.log(`⏸️ Pausing for ${step.pauseAfter}ms...`);
+            await sleep(step.pauseAfter);
+            
+            if (i === 1 || i === 2) {
+                document.getElementById('visualizer').classList.remove('listening');
+                document.getElementById('talkBtn').textContent = 'Installing...';
+            }
         }
         
-        console.log(`⏸️ Pausing for ${step.pauseAfter}ms...`);
-        await sleep(step.pauseAfter);
+        console.log('✅ All setup steps completed');
         
-        if (i === 1 || i === 2) {
-            document.getElementById('visualizer').classList.remove('listening');
-            document.getElementById('talkBtn').textContent = 'Installing...';
-        }
+        // After all setup messages, start OS1
+        await sleep(1000);
+        completeSetup();
+        
+    } catch (error) {
+        console.error('❌ Setup sequence error:', error);
+        // Fallback - just start OS1 anyway
+        completeSetup();
     }
-    
-    // After all setup messages, start OS1
-    await sleep(1000);
-    completeSetup();
 }
 
 function completeSetup() {
@@ -256,17 +270,10 @@ async function getAIResponse(userMessage) {
 }
 
 // Async version for sequential playback
-async function speakWithVoiceAsync(text, voiceType) {
+function speakWithVoiceAsync(text, voiceType) {
     return new Promise(async (resolve, reject) => {
-        console.log(`🔊 Generating speech (${voiceType}):`, text);
+        console.log(`🔊 Requesting TTS (${voiceType}):`, text.substring(0, 50) + '...');
         
-        if (currentAudioSource) {
-            currentAudioSource.stop();
-            currentAudioSource = null;
-        }
-        
-        document.getElementById('visualizer').classList.add('listening');
-
         try {
             const response = await fetch('/api/tts', {
                 method: 'POST',
@@ -283,7 +290,13 @@ async function speakWithVoiceAsync(text, voiceType) {
             }
 
             const data = await response.json();
-            console.log(`✅ Audio received (${voiceType})`);
+            console.log(`✅ TTS audio received (${voiceType})`);
+
+            // Stop any current audio
+            if (currentAudioSource) {
+                currentAudioSource.stop();
+                currentAudioSource = null;
+            }
 
             const binaryString = atob(data.audio);
             const bytes = new Uint8Array(binaryString.length);
@@ -291,25 +304,25 @@ async function speakWithVoiceAsync(text, voiceType) {
                 bytes[i] = binaryString.charCodeAt(i);
             }
             
+            console.log(`🎵 Decoding audio (${bytes.length} bytes)...`);
             const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
+            
             currentAudioSource = audioContext.createBufferSource();
             currentAudioSource.buffer = audioBuffer;
             currentAudioSource.connect(audioContext.destination);
             
             currentAudioSource.onended = () => {
-                console.log('⏹️ Speech finished');
+                console.log(`⏹️ Audio playback finished (${voiceType})`);
                 currentAudioSource = null;
-                document.getElementById('visualizer').classList.remove('listening');
                 resolve();
             };
             
             currentAudioSource.start(0);
-            console.log(`▶️ Playing ${voiceType} voice`);
+            console.log(`▶️ Playing ${voiceType} audio (${audioBuffer.duration.toFixed(1)}s)`);
 
         } catch (error) {
             console.error('❌ TTS Error:', error);
             currentAudioSource = null;
-            document.getElementById('visualizer').classList.remove('listening');
             reject(error);
         }
     });
