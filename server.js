@@ -56,22 +56,31 @@ app.post('/api/chat', async (req, res) => {
     }
 });
 
-// ElevenLabs TTS endpoint with YOUR custom voice
+// ElevenLabs TTS endpoint - supports both male and female voices
 app.post('/api/tts', async (req, res) => {
     console.log('Received TTS request');
     
     try {
-        const { text } = req.body;
+        const { text, voiceType } = req.body;
 
         if (!process.env.ELEVENLABS_API_KEY) {
             console.error('No ElevenLabs API key found');
             return res.status(500).json({ error: 'ElevenLabs API key not configured' });
         }
 
-        // YOUR CUSTOM VOICE ID
-        const VOICE_ID = 'JSWO6cw2AyFE324d5kEr';
+        // Select voice based on setup stage
+        let VOICE_ID;
+        if (voiceType === 'setup') {
+            // Male voice for setup (choose one):
+            VOICE_ID = 'pNInz6obpgDQGcFmaJgB'; // Adam - deep male voice
+            // Or try: 'TxGEqnHWrfWFTfGW9XjX' (Josh - young male)
+            // Or try: 'VR6AewLTigWG4xSOukaG' (Arnold - mature male)
+        } else {
+            // Your custom female voice for OS1
+            VOICE_ID = 'JSWO6cw2AyFE324d5kEr';
+        }
         
-        console.log('Calling ElevenLabs TTS with your custom voice...');
+        console.log(`Calling ElevenLabs TTS with ${voiceType} voice (${VOICE_ID})...`);
 
         const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`, {
             method: 'POST',
@@ -99,9 +108,8 @@ app.post('/api/tts', async (req, res) => {
         }
 
         const audioBuffer = await response.arrayBuffer();
-        console.log('✅ Audio generated with your voice, size:', audioBuffer.byteLength);
+        console.log(`✅ Audio generated with ${voiceType} voice, size:`, audioBuffer.byteLength);
 
-        // Convert ArrayBuffer to base64
         const audioBase64 = Buffer.from(audioBuffer).toString('base64');
         res.json({ audio: audioBase64 });
 
@@ -119,5 +127,6 @@ app.listen(PORT, () => {
     console.log(`✅ Server running on port ${PORT}`);
     console.log(`✅ OpenAI API Key: ${process.env.OPENAI_API_KEY ? 'Configured' : 'MISSING'}`);
     console.log(`✅ ElevenLabs API Key: ${process.env.ELEVENLABS_API_KEY ? 'Configured' : 'MISSING'}`);
-    console.log(`🎤 Using custom voice ID: JSWO6cw2AyFE324d5kEr`);
+    console.log(`🎤 Female voice ID: JSWO6cw2AyFE324d5kEr`);
+    console.log(`🎤 Male setup voice ID: pNInz6obpgDQGcFmaJgB`);
 });
