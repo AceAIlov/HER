@@ -6,6 +6,8 @@ let isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 let audioContext;
 let currentAudioSource;
 let setupComplete = false;
+let setupStage = 0;
+let selectedVoice = 'female'; // default
 
 function initialize() {
     console.log('🎤 Initializing OS1...');
@@ -57,32 +59,54 @@ function startSetup() {
 }
 
 async function runSetup() {
-    console.log('📢 Running setup...');
+    console.log('📢 Running setup sequence...');
     
-    // Message 1 - Welcome
+    // Welcome message
     await speakWithVoice(
         "Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.",
         'setup'
     );
     
-    await sleep(2000);
+    await sleep(1500);
     
-    // Message 2 - Initializing
-    await speakWithVoice(
-        "Thank you. Please wait as your individualized operating system is initiated.",
-        'setup'
-    );
-    
-    await sleep(2000);
-    
-    // Start OS1 with female voice
-    setupComplete = true;
-    console.log('✅ Setup complete, starting OS1...');
-    
-    await speakWithVoice(
-        "Hi. How are you?",
-        'os1'
-    );
+    // Question 1: Social or anti-social
+    await speakWithVoice("Are you social or anti-social?", 'setup');
+    setupStage = 1; // Wait for answer
+    enableListening();
+}
+
+async function continueSetup() {
+    if (setupStage === 1) {
+        // After social question, ask about mother
+        await speakWithVoice("How's your relationship with your mother?", 'setup');
+        setupStage = 2; // Wait for answer
+        enableListening();
+        
+    } else if (setupStage === 2) {
+        // After mother question, proceed
+        await speakWithVoice("Thank you. Please wait as your individualized operating system is initiated.", 'setup');
+        await sleep(2000);
+        
+        // Ask for voice preference
+        await speakWithVoice("Would you like a male or female voice?", 'setup');
+        setupStage = 3; // Wait for voice selection
+        enableListening();
+        
+    } else if (setupStage === 3) {
+        // Voice selected, start OS1
+        setupComplete = true;
+        setupStage = 0;
+        
+        const voiceType = selectedVoice; // 'male' or 'female'
+        
+        await speakWithVoice("Hi. How are you?", voiceType);
+    }
+}
+
+function enableListening() {
+    document.getElementById('talkBtn').disabled = false;
+    document.getElementById('talkBtn').textContent = 'Hold to Answer';
+    console.log('✅ Ready for user response');
 }
 
 function sleep(ms) {
@@ -92,13 +116,13 @@ function sleep(ms) {
 function startHolding(event) {
     event?.preventDefault();
     
-    if (!setupComplete) {
+    if (!setupComplete && setupStage === 0) {
         startSetup();
         return;
     }
     
     if (currentAudioSource) {
-        console.log('⚠️ Wait for OS1 to finish speaking');
+        console.log('⚠️ Wait for voice to finish');
         return;
     }
     
@@ -124,7 +148,6 @@ function startHolding(event) {
 function stopHolding(event) {
     event?.preventDefault();
     
-    if (!setupComplete) return;
     if (!isHolding) return;
     
     console.log('🛑 Stop listening');
@@ -144,14 +167,55 @@ function stopHolding(event) {
         if (finalTranscript) {
             console.log('📝 You said:', finalTranscript);
             document.getElementById('visualizer').classList.remove('listening');
-            getAIResponse(finalTranscript);
+            
+            if (!setupComplete && setupStage > 0) {
+                // During setup - handle responses
+                handleSetupResponse(finalTranscript);
+            } else if (setupComplete) {
+                // Normal conversation
+                getAIResponse(finalTranscript);
+            }
         } else {
             console.log('⚠️ No speech detected');
             document.getElementById('visualizer').classList.remove('listening');
-            document.getElementById('talkBtn').textContent = 'Hold to Talk';
-            document.getElementById('talkBtn').disabled = false;
+            
+            if (setupStage > 0) {
+                document.getElementById('talkBtn').textContent = 'Hold to Answer';
+                document.getElementById('talkBtn').disabled = false;
+            } else if (setupComplete) {
+                document.getElementById('talkBtn').textContent = 'Hold to Talk';
+                document.getElementById('talkBtn').disabled = false;
+            }
         }
     }, 600);
+}
+
+function handleSetupResponse(response) {
+    console.log(`Setup stage ${setupStage} response:`, response);
+    
+    if (setupStage === 3) {
+        // Voice selection
+        const lowerResponse = response.toLowerCase();
+        if (lowerResponse.includes('male') && !lowerResponse.includes('female')) {
+            selectedVoice = 'male';
+            console.log('✅ User selected: Male voice');
+        } else if (lowerResponse.includes('female')) {
+            selectedVoice = 'female';
+            console.log('✅ User selected: Female voice');
+        } else {
+            // Default to female if unclear
+            selectedVoice = 'female';
+            console.log('⚠️ Unclear response, defaulting to female voice');
+        }
+    }
+    
+    // Disable button and continue setup
+    document.getElementById('talkBtn').disabled = true;
+    document.getElementById('talkBtn').textContent = 'Installing...';
+    
+    setTimeout(() => {
+        continueSetup();
+    }, 800);
 }
 
 function handleSpeechResult(event) {
@@ -189,7 +253,7 @@ async function getAIResponse(userMessage) {
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are OS1, a warm, empathetic, curious AI companion with a gentle feminine personality. You genuinely care about the person you\'re talking to. Keep responses natural and conversational (2-4 sentences). Show genuine interest and emotional intelligence. Be thoughtful, kind, and speak like a caring friend having an intimate conversation.'
+                        content: 'You are OS1, a warm, empathetic, curious AI companion with a gentle personality. You genuinely care about the person you\'re talking to. Keep responses natural and conversational (2-4 sentences). Show genuine interest and emotional intelligence. Be thoughtful, kind, and speak like a caring friend having an intimate conversation.'
                     },
                     ...conversationHistory
                 ]
@@ -206,12 +270,12 @@ async function getAIResponse(userMessage) {
         conversationHistory.push({ role: 'assistant', content: data.message });
         
         setTimeout(() => {
-            speakWithVoice(data.message, 'os1');
+            speakWithVoice(data.message, selectedVoice);
         }, 300);
 
     } catch (error) {
         console.error('❌ Error:', error);
-        speakWithVoice("I'm sorry, I had trouble with that. Could you try again?", 'os1');
+        speakWithVoice("I'm sorry, I had trouble with that. Could you try again?", selectedVoice);
     }
 }
 
@@ -225,7 +289,12 @@ async function speakWithVoice(text, voiceType) {
     
     document.getElementById('visualizer').classList.add('listening');
     document.getElementById('talkBtn').disabled = true;
-    document.getElementById('talkBtn').textContent = voiceType === 'setup' ? 'Installing...' : 'Speaking...';
+    
+    if (voiceType === 'setup') {
+        document.getElementById('talkBtn').textContent = 'Installing...';
+    } else {
+        document.getElementById('talkBtn').textContent = 'Speaking...';
+    }
 
     try {
         const response = await fetch('/api/tts', {
