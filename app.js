@@ -7,6 +7,7 @@ let currentAudioSource;
 let setupComplete = false;
 let setupStage = 0;
 let selectedVoice = 'female';
+let setupStarted = false;
 
 function initialize() {
     console.log('🎤 Initializing OS1...');
@@ -33,17 +34,30 @@ function initialize() {
 }
 
 function startSetup() {
+    if (setupStarted) {
+        console.log('⚠️ Setup already started');
+        return;
+    }
+    
+    setupStarted = true;
+    console.log('🎬 Starting setup...');
+    
     document.getElementById('talkBtn').disabled = true;
     document.getElementById('talkBtn').textContent = 'Installing...';
     
     if (audioContext.state === 'suspended') {
-        audioContext.resume().then(() => setTimeout(() => runSetup(), 200));
+        audioContext.resume().then(() => {
+            console.log('✅ Audio unlocked');
+            setTimeout(() => runSetup(), 200);
+        });
     } else {
         setTimeout(() => runSetup(), 200);
     }
 }
 
 async function runSetup() {
+    console.log('📢 Running setup sequence...');
+    
     await speakWithVoice(
         "Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.",
         'setup'
@@ -91,17 +105,34 @@ function sleep(ms) {
 function startHolding(event) {
     event?.preventDefault();
     
-    if (!setupComplete && setupStage === 0) {
+    console.log('👆 Button pressed');
+    console.log('Setup started:', setupStarted);
+    console.log('Setup complete:', setupComplete);
+    console.log('Setup stage:', setupStage);
+    
+    // First tap - start setup
+    if (!setupStarted && !setupComplete && setupStage === 0) {
+        console.log('🎬 Initiating setup...');
         startSetup();
         return;
     }
     
+    // Don't allow input if audio is playing
     if (currentAudioSource) {
-        console.log('Wait for voice to finish');
+        console.log('⚠️ Wait for voice to finish');
         return;
     }
     
-    if (isHolding) return;
+    // Don't allow if not in listening mode
+    if (!setupComplete && setupStage === 0) {
+        console.log('⚠️ Setup not ready yet');
+        return;
+    }
+    
+    if (isHolding) {
+        console.log('⚠️ Already holding');
+        return;
+    }
     
     console.log('🎙️ Listening...');
     isHolding = true;
@@ -256,6 +287,7 @@ async function getAIResponse(userMessage) {
 async function speakWithVoice(text, voiceType) {
     console.log(`🔊 Speaking (${voiceType}):`, text.substring(0, 50) + '...');
     
+    // Stop any current audio
     if (currentAudioSource) {
         try {
             currentAudioSource.stop();
