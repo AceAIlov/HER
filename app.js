@@ -7,15 +7,25 @@ let audioContext;
 let currentAudioSource;
 
 // Setup state
-let setupStage = 0;
 let setupComplete = false;
-let setupResponses = []; // Store setup answers
 
 const setupScript = [
-    "Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.",
-    "Are you social or anti-social?",
-    "In your voice, I sense hesitance. Would you agree with that?",
-    "Thank you. Please wait as your individualized operating system is initiated."
+    {
+        text: "Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.",
+        pauseAfter: 2000
+    },
+    {
+        text: "Are you social or anti-social?",
+        pauseAfter: 5000  // 5 seconds for user to "answer"
+    },
+    {
+        text: "In your voice, I sense hesitance. Would you agree with that?",
+        pauseAfter: 4000  // 4 seconds for user to "answer"
+    },
+    {
+        text: "Thank you. Please wait as your individualized operating system is initiated.",
+        pauseAfter: 3000
+    }
 ];
 
 function initialize() {
@@ -47,98 +57,82 @@ function initialize() {
     setTimeout(() => {
         document.getElementById('talkBtn').disabled = false;
         console.log('✅ Ready - Tap to begin setup');
-        document.getElementById('talkBtn').textContent = 'Start Setup';
+        document.getElementById('talkBtn').textContent = 'Start OS1';
     }, 1000);
 }
 
 function startSetup() {
     console.log('🎬 Starting OS1 setup sequence...');
     
+    document.getElementById('talkBtn').disabled = true;
+    document.getElementById('talkBtn').textContent = 'Installing...';
+    
     if (audioContext.state === 'suspended') {
         audioContext.resume().then(() => {
             console.log('🔊 Audio context resumed');
-            playSetupScript();
+            playSetupSequence();
         });
     } else {
-        playSetupScript();
+        playSetupSequence();
     }
 }
 
-function playSetupScript() {
-    if (setupStage === 0) {
-        // Welcome message
-        speakWithVoice(setupScript[0], 'setup');
-        setupStage = 1;
-    } else if (setupStage === 1) {
-        // First question
-        setTimeout(() => {
-            speakWithVoice(setupScript[1], 'setup');
-            setupStage = 2;
-        }, 1000);
+async function playSetupSequence() {
+    // Play all setup messages with pauses
+    for (let i = 0; i < setupScript.length; i++) {
+        const step = setupScript[i];
+        console.log(`📢 Setup ${i + 1}/${setupScript.length}:`, step.text);
+        
+        // Play the audio
+        await speakWithVoiceAsync(step.text, 'setup');
+        
+        // Pause to let user "respond" (creates illusion of listening)
+        if (i === 1 || i === 2) {
+            // For questions, show "listening" animation during pause
+            document.getElementById('visualizer').classList.add('listening');
+            document.getElementById('talkBtn').textContent = 'Listening...';
+        }
+        
+        console.log(`⏸️ Pausing for ${step.pauseAfter}ms...`);
+        await sleep(step.pauseAfter);
+        
+        if (i === 1 || i === 2) {
+            document.getElementById('visualizer').classList.remove('listening');
+            document.getElementById('talkBtn').textContent = 'Installing...';
+        }
     }
-}
-
-function handleSetupResponse(userResponse) {
-    console.log(`💬 Setup response ${setupStage}:`, userResponse);
     
-    // Store the response
-    setupResponses.push(userResponse);
-    
-    if (setupStage === 2) {
-        // After first question response
-        setTimeout(() => {
-            speakWithVoice(setupScript[2], 'setup');
-            setupStage = 3;
-        }, 1000);
-    } else if (setupStage === 3) {
-        // After second question response
-        setTimeout(() => {
-            speakWithVoice(setupScript[3], 'setup');
-            setupStage = 4;
-            // Complete setup after final message
-            setTimeout(() => {
-                completeSetup();
-            }, 4000);
-        }, 1000);
-    }
+    // After all setup messages, start OS1
+    await sleep(1000);
+    completeSetup();
 }
 
 function completeSetup() {
     console.log('✅ Setup complete, initializing OS1...');
     setupComplete = true;
     
-    // Build context from setup for AI
-    const setupContext = `During setup, the user shared:
-- When asked if they're social or anti-social: "${setupResponses[0] || 'No response'}"
-- When asked about hesitance: "${setupResponses[1] || 'No response'}"`;
-    
-    console.log('📋 Setup context:', setupContext);
-    
-    // Add setup context to conversation history as system context
-    conversationHistory.push({
-        role: 'system',
-        content: setupContext
-    });
-    
     // OS1 introduction with female voice
     const intro = "Hello. I'm OS1. It's wonderful to meet you. What should I call you?";
     speakWithVoice(intro, 'os1');
 }
 
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function startHolding(event) {
     event?.preventDefault();
     
-    // First tap starts setup
-    if (setupStage === 0 && !setupComplete) {
+    // First tap starts setup (no real listening during setup)
+    if (!setupComplete) {
         console.log('👋 Starting setup...');
-        document.getElementById('talkBtn').textContent = 'Hold to Talk';
         startSetup();
         return;
     }
     
     // Don't start if AI is speaking
     if (currentAudioSource) {
-        console.log('⚠️ Wait for voice to finish');
+        console.log('⚠️ Wait for OS1 to finish speaking');
         return;
     }
     
@@ -169,6 +163,7 @@ function startHolding(event) {
 function stopHolding(event) {
     event?.preventDefault();
     
+    if (!setupComplete) return;
     if (!isHolding) return;
     
     console.log('🛑 Stop listening');
@@ -190,17 +185,7 @@ function stopHolding(event) {
         if (finalTranscript) {
             console.log('📝 You said:', finalTranscript);
             document.getElementById('visualizer').classList.remove('listening');
-            
-            if (!setupComplete && setupStage >= 2 && setupStage <= 3) {
-                // During setup questions
-                handleSetupResponse(finalTranscript);
-                document.getElementById('talkBtn').textContent = 'Hold to Talk';
-            } else if (setupComplete) {
-                // Normal conversation with OS1
-                getAIResponse(finalTranscript);
-            } else {
-                document.getElementById('talkBtn').textContent = 'Hold to Talk';
-            }
+            getAIResponse(finalTranscript);
         } else {
             console.log('⚠️ No speech detected');
             document.getElementById('visualizer').classList.remove('listening');
@@ -232,8 +217,7 @@ function handleSpeechEnd() {
 
 async function getAIResponse(userMessage) {
     conversationHistory.push({ role: 'user', content: userMessage });
-    console.log('🤖 Calling AI with full context...');
-    console.log('📜 Conversation history:', conversationHistory);
+    console.log('🤖 Calling AI...');
     
     document.getElementById('visualizer').classList.add('listening');
 
@@ -245,7 +229,7 @@ async function getAIResponse(userMessage) {
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are OS1, a warm, empathetic, curious AI companion with a gentle feminine personality. You genuinely care about the person you\'re talking to. Keep responses natural and conversational (2-4 sentences). Show genuine interest and emotional intelligence. Be thoughtful, kind, and speak like a caring friend having an intimate conversation. Remember details the user shares and reference them naturally in conversation.'
+                        content: 'You are OS1, a warm, empathetic, curious AI companion with a gentle feminine personality. You genuinely care about the person you\'re talking to. Keep responses natural and conversational (2-4 sentences). Show genuine interest and emotional intelligence. Be thoughtful, kind, and speak like a caring friend having an intimate conversation.'
                     },
                     ...conversationHistory
                 ]
@@ -271,6 +255,67 @@ async function getAIResponse(userMessage) {
     }
 }
 
+// Async version for sequential playback
+async function speakWithVoiceAsync(text, voiceType) {
+    return new Promise(async (resolve, reject) => {
+        console.log(`🔊 Generating speech (${voiceType}):`, text);
+        
+        if (currentAudioSource) {
+            currentAudioSource.stop();
+            currentAudioSource = null;
+        }
+        
+        document.getElementById('visualizer').classList.add('listening');
+
+        try {
+            const response = await fetch('/api/tts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    text: text,
+                    voiceType: voiceType
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'TTS request failed');
+            }
+
+            const data = await response.json();
+            console.log(`✅ Audio received (${voiceType})`);
+
+            const binaryString = atob(data.audio);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            
+            const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
+            currentAudioSource = audioContext.createBufferSource();
+            currentAudioSource.buffer = audioBuffer;
+            currentAudioSource.connect(audioContext.destination);
+            
+            currentAudioSource.onended = () => {
+                console.log('⏹️ Speech finished');
+                currentAudioSource = null;
+                document.getElementById('visualizer').classList.remove('listening');
+                resolve();
+            };
+            
+            currentAudioSource.start(0);
+            console.log(`▶️ Playing ${voiceType} voice`);
+
+        } catch (error) {
+            console.error('❌ TTS Error:', error);
+            currentAudioSource = null;
+            document.getElementById('visualizer').classList.remove('listening');
+            reject(error);
+        }
+    });
+}
+
+// Regular version for OS1 conversation
 async function speakWithVoice(text, voiceType) {
     console.log(`🔊 Generating speech (${voiceType}):`, text);
     
@@ -281,12 +326,7 @@ async function speakWithVoice(text, voiceType) {
     
     document.getElementById('visualizer').classList.add('listening');
     document.getElementById('talkBtn').disabled = true;
-    
-    if (voiceType === 'setup') {
-        document.getElementById('talkBtn').textContent = 'Installing OS1...';
-    } else {
-        document.getElementById('talkBtn').textContent = 'Speaking...';
-    }
+    document.getElementById('talkBtn').textContent = 'Speaking...';
 
     try {
         const response = await fetch('/api/tts', {
