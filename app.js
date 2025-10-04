@@ -2,17 +2,16 @@ let recognition;
 let isHolding = false;
 let conversationHistory = [];
 let currentTranscript = '';
-let isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 let audioContext;
 let currentAudioSource;
 let setupComplete = false;
 let setupStage = 0;
 let selectedVoice = 'female';
-let audioUnlocked = false;
 
 function initialize() {
     console.log('🎤 Initializing OS1...');
-    console.log('📱 Mobile:', isMobile);
+    
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
     
     if ('webkitSpeechRecognition' in window) {
         recognition = new webkitSpeechRecognition();
@@ -20,74 +19,35 @@ function initialize() {
         recognition.interimResults = true;
         recognition.lang = 'en-US';
         recognition.onresult = handleSpeechResult;
-        recognition.onerror = (e) => {
-            console.error('❌ Recognition error:', e.error);
-            if (e.error === 'not-allowed') {
-                alert('Please allow microphone access');
-            }
-        };
+        recognition.onerror = (e) => console.error('Recognition error:', e.error);
         recognition.onend = handleSpeechEnd;
-        console.log('✅ Speech recognition ready');
     } else {
-        alert('❌ Speech recognition not supported. Use Chrome or Safari!');
+        alert('Speech recognition not supported. Use Chrome or Safari!');
         return;
     }
     
     setTimeout(() => {
         document.getElementById('talkBtn').disabled = false;
-        console.log('✅ Ready - Tap to begin');
         document.getElementById('talkBtn').textContent = 'Start OS1';
     }, 1000);
 }
 
-function unlockAudio() {
-    if (audioUnlocked) return Promise.resolve();
-    
-    console.log('🔓 Unlocking audio for mobile...');
-    
-    if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        console.log('🔊 Audio context created');
-    }
-    
-    return audioContext.resume().then(() => {
-        const buffer = audioContext.createBuffer(1, 1, 22050);
-        const source = audioContext.createBufferSource();
-        source.buffer = buffer;
-        source.connect(audioContext.destination);
-        source.start(0);
-        
-        audioUnlocked = true;
-        console.log('✅ Audio unlocked, state:', audioContext.state);
-        return Promise.resolve();
-    }).catch(err => {
-        console.error('❌ Failed to unlock audio:', err);
-        return Promise.reject(err);
-    });
-}
-
 function startSetup() {
-    console.log('👋 Starting setup...');
-    
     document.getElementById('talkBtn').disabled = true;
     document.getElementById('talkBtn').textContent = 'Installing...';
     
-    unlockAudio().then(() => {
-        setTimeout(() => runSetup(), 500);
-    }).catch(err => {
-        alert('Audio initialization failed. Please refresh and try again.');
-        console.error('Audio unlock error:', err);
-    });
+    if (audioContext.state === 'suspended') {
+        audioContext.resume().then(() => runSetup());
+    } else {
+        runSetup();
+    }
 }
 
 async function runSetup() {
-    console.log('📢 Running setup sequence...');
-    
     await speakWithVoice(
         "Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.",
         'setup'
     );
-    
     await sleep(1500);
     
     await speakWithVoice("Are you social or anti-social?", 'setup');
@@ -110,10 +70,10 @@ async function continueSetup() {
         enableListening();
         
     } else if (setupStage === 3) {
+        console.log('✅ Setup complete! Selected voice:', selectedVoice);
         setupComplete = true;
         setupStage = 0;
-        
-        console.log('🎤 Final selected voice:', selectedVoice);
+        conversationHistory = [];
         
         await speakWithVoice("Hi. How are you?", selectedVoice);
     }
@@ -122,7 +82,6 @@ async function continueSetup() {
 function enableListening() {
     document.getElementById('talkBtn').disabled = false;
     document.getElementById('talkBtn').textContent = 'Hold to Answer';
-    console.log('✅ Ready for user response');
 }
 
 function sleep(ms) {
@@ -138,13 +97,13 @@ function startHolding(event) {
     }
     
     if (currentAudioSource) {
-        console.log('⚠️ Wait for voice to finish');
+        console.log('Wait for voice to finish');
         return;
     }
     
     if (isHolding) return;
     
-    console.log('🎙️ Start listening...');
+    console.log('🎙️ Listening...');
     isHolding = true;
     currentTranscript = '';
     
@@ -157,7 +116,7 @@ function startHolding(event) {
     try {
         recognition.start();
     } catch (e) {
-        console.log('Recognition start error:', e);
+        console.log('Recognition already started');
     }
 }
 
@@ -166,7 +125,7 @@ function stopHolding(event) {
     
     if (!isHolding) return;
     
-    console.log('🛑 Stop listening');
+    console.log('🛑 Stopped');
     isHolding = false;
     
     document.getElementById('talkBtn').classList.remove('holding');
@@ -190,7 +149,7 @@ function stopHolding(event) {
                 getAIResponse(finalTranscript);
             }
         } else {
-            console.log('⚠️ No speech detected');
+            console.log('No speech detected');
             document.getElementById('visualizer').classList.remove('listening');
             
             if (setupStage > 0) {
@@ -205,39 +164,23 @@ function stopHolding(event) {
 }
 
 function handleSetupResponse(response) {
-    console.log(`📝 Setup stage ${setupStage} response:`, response);
+    console.log(`Setup stage ${setupStage} response:`, response);
     
     if (setupStage === 3) {
-        // Voice selection - be more flexible in detection
         const lowerResponse = response.toLowerCase();
         
-        console.log('🔍 Analyzing response:', lowerResponse);
-        
-        // Check for male keywords
-        if (lowerResponse.includes('male') || lowerResponse.includes('man') || 
-            lowerResponse.includes('boy') || lowerResponse.includes('guy') || 
-            lowerResponse.includes('dude') || lowerResponse.includes('him')) {
-            
-            // Make sure it's not "female"
-            if (!lowerResponse.includes('female') && !lowerResponse.includes('woman')) {
-                selectedVoice = 'male';
-                console.log('✅ DETECTED: Male voice selected');
-            } else {
-                selectedVoice = 'female';
-                console.log('✅ DETECTED: Female voice selected (contained both, defaulted to female)');
-            }
-        } else if (lowerResponse.includes('female') || lowerResponse.includes('woman') || 
-                   lowerResponse.includes('girl') || lowerResponse.includes('lady') || 
-                   lowerResponse.includes('her')) {
+        if (lowerResponse.includes('male') && !lowerResponse.includes('female')) {
+            selectedVoice = 'male';
+            console.log('✅ Male voice selected');
+        } else if (lowerResponse.includes('female')) {
             selectedVoice = 'female';
-            console.log('✅ DETECTED: Female voice selected');
+            console.log('✅ Female voice selected');
         } else {
-            // Default to female if unclear
             selectedVoice = 'female';
-            console.log('⚠️ Unclear response, defaulting to female voice');
+            console.log('⚠️ Defaulting to female');
         }
         
-        console.log('🎯 FINAL SELECTION:', selectedVoice);
+        console.log('🎯 Final voice:', selectedVoice);
     }
     
     document.getElementById('talkBtn').disabled = true;
@@ -253,32 +196,31 @@ function handleSpeechResult(event) {
         const transcript = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
             currentTranscript += transcript + ' ';
-            console.log('📝 Captured:', transcript);
         }
     }
 }
 
 function handleSpeechEnd() {
-    console.log('🔄 Recognition ended');
     if (isHolding) {
         try {
             recognition.start();
         } catch (e) {}
-    } else {
-        document.getElementById('visualizer').classList.remove('listening');
     }
 }
 
 async function getAIResponse(userMessage) {
-    conversationHistory.push({ role: 'user', content: userMessage });
-    console.log('🤖 Calling AI with message:', userMessage);
+    console.log('🤖 User said:', userMessage);
     console.log('🗣️ Using voice:', selectedVoice);
+    
+    conversationHistory.push({ role: 'user', content: userMessage });
     
     document.getElementById('visualizer').classList.add('listening');
     document.getElementById('talkBtn').disabled = true;
     document.getElementById('talkBtn').textContent = 'Thinking...';
 
     try {
+        console.log('📡 Calling OpenAI API...');
+        
         const response = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -286,19 +228,17 @@ async function getAIResponse(userMessage) {
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are OS1, a warm, empathetic, curious AI companion with a gentle personality. You genuinely care about the person you\'re talking to. Keep responses natural and conversational (2-4 sentences). Show genuine interest and emotional intelligence. Be thoughtful, kind, and speak like a caring friend having an intimate conversation.'
+                        content: 'You are OS1, a warm, empathetic, curious AI companion. Keep responses natural and conversational (2-4 sentences). Show genuine interest and emotional intelligence.'
                     },
                     ...conversationHistory
                 ]
             })
         });
 
-        console.log('📡 API response status:', response.status);
+        console.log('📊 API Status:', response.status);
 
         if (!response.ok) {
-            const errorData = await response.json();
-            console.error('❌ API error:', errorData);
-            throw new Error('API request failed: ' + response.status);
+            throw new Error('API failed: ' + response.status);
         }
 
         const data = await response.json();
@@ -306,23 +246,20 @@ async function getAIResponse(userMessage) {
         
         conversationHistory.push({ role: 'assistant', content: data.message });
         
-        setTimeout(() => {
-            speakWithVoice(data.message, selectedVoice);
-        }, 300);
+        // Speak the response
+        await speakWithVoice(data.message, selectedVoice);
 
     } catch (error) {
-        console.error('❌ Full Error:', error);
+        console.error('❌ Error:', error);
         document.getElementById('visualizer').classList.remove('listening');
         document.getElementById('talkBtn').disabled = false;
         document.getElementById('talkBtn').textContent = 'Hold to Talk';
-        
-        // Don't say "sorry" - just log the error
-        alert('Error: ' + error.message + '\n\nCheck console for details.');
+        alert('Error: ' + error.message);
     }
 }
 
 async function speakWithVoice(text, voiceType) {
-    console.log(`🔊 Generating speech (${voiceType}):`, text.substring(0, 40) + '...');
+    console.log(`🔊 Speaking (${voiceType}):`, text.substring(0, 50) + '...');
     
     if (currentAudioSource) {
         try {
@@ -333,41 +270,25 @@ async function speakWithVoice(text, voiceType) {
     
     document.getElementById('visualizer').classList.add('listening');
     document.getElementById('talkBtn').disabled = true;
-    
-    if (voiceType === 'setup') {
-        document.getElementById('talkBtn').textContent = 'Installing...';
-    } else {
-        document.getElementById('talkBtn').textContent = 'Speaking...';
-    }
+    document.getElementById('talkBtn').textContent = voiceType === 'setup' ? 'Installing...' : 'Speaking...';
 
     try {
-        console.log('📡 Calling TTS API with voice type:', voiceType);
-        
+        if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+        }
+
         const response = await fetch('/api/tts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text, voiceType })
         });
 
-        console.log('📊 TTS response status:', response.status);
-
         if (!response.ok) {
             const errorData = await response.json();
-            console.error('❌ TTS Error:', errorData);
-            throw new Error(errorData.error || 'TTS request failed');
+            throw new Error(errorData.error || 'TTS failed');
         }
 
         const data = await response.json();
-        console.log('✅ Audio data received');
-
-        if (!audioContext) {
-            await unlockAudio();
-        }
-        
-        if (audioContext.state === 'suspended') {
-            await audioContext.resume();
-            console.log('🔊 Audio context resumed');
-        }
 
         const binaryString = atob(data.audio);
         const bytes = new Uint8Array(binaryString.length);
@@ -375,18 +296,14 @@ async function speakWithVoice(text, voiceType) {
             bytes[i] = binaryString.charCodeAt(i);
         }
         
-        console.log('🎵 Decoding audio...');
         const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
-        
-        console.log(`✅ Audio decoded (${audioBuffer.duration.toFixed(1)}s)`);
-        
         currentAudioSource = audioContext.createBufferSource();
         currentAudioSource.buffer = audioBuffer;
         currentAudioSource.connect(audioContext.destination);
         
         return new Promise((resolve) => {
             currentAudioSource.onended = () => {
-                console.log('⏹️ Speech finished');
+                console.log('⏹️ Finished speaking');
                 currentAudioSource = null;
                 document.getElementById('visualizer').classList.remove('listening');
                 
@@ -399,11 +316,11 @@ async function speakWithVoice(text, voiceType) {
             };
             
             currentAudioSource.start(0);
-            console.log(`▶️ Playing ${voiceType} voice`);
+            console.log(`▶️ Playing audio`);
         });
 
     } catch (error) {
-        console.error('❌ TTS Error:', error);
+        console.error('❌ Speech error:', error);
         currentAudioSource = null;
         document.getElementById('visualizer').classList.remove('listening');
         
