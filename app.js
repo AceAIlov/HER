@@ -9,6 +9,7 @@ let currentAudioSource;
 // Setup state
 let setupStage = 0;
 let setupComplete = false;
+let setupResponses = []; // Store setup answers
 
 const setupScript = [
     "Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.",
@@ -80,6 +81,9 @@ function playSetupScript() {
 function handleSetupResponse(userResponse) {
     console.log(`💬 Setup response ${setupStage}:`, userResponse);
     
+    // Store the response
+    setupResponses.push(userResponse);
+    
     if (setupStage === 2) {
         // After first question response
         setTimeout(() => {
@@ -102,6 +106,19 @@ function handleSetupResponse(userResponse) {
 function completeSetup() {
     console.log('✅ Setup complete, initializing OS1...');
     setupComplete = true;
+    
+    // Build context from setup for AI
+    const setupContext = `During setup, the user shared:
+- When asked if they're social or anti-social: "${setupResponses[0] || 'No response'}"
+- When asked about hesitance: "${setupResponses[1] || 'No response'}"`;
+    
+    console.log('📋 Setup context:', setupContext);
+    
+    // Add setup context to conversation history as system context
+    conversationHistory.push({
+        role: 'system',
+        content: setupContext
+    });
     
     // OS1 introduction with female voice
     const intro = "Hello. I'm OS1. It's wonderful to meet you. What should I call you?";
@@ -215,7 +232,8 @@ function handleSpeechEnd() {
 
 async function getAIResponse(userMessage) {
     conversationHistory.push({ role: 'user', content: userMessage });
-    console.log('🤖 Calling AI...');
+    console.log('🤖 Calling AI with full context...');
+    console.log('📜 Conversation history:', conversationHistory);
     
     document.getElementById('visualizer').classList.add('listening');
 
@@ -227,7 +245,7 @@ async function getAIResponse(userMessage) {
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are OS1, a warm, empathetic, curious AI companion with a gentle feminine personality. You genuinely care about the person you\'re talking to. Keep responses natural and conversational (2-4 sentences). Show genuine interest and emotional intelligence. Be thoughtful, kind, and speak like a caring friend having an intimate conversation.'
+                        content: 'You are OS1, a warm, empathetic, curious AI companion with a gentle feminine personality. You genuinely care about the person you\'re talking to. Keep responses natural and conversational (2-4 sentences). Show genuine interest and emotional intelligence. Be thoughtful, kind, and speak like a caring friend having an intimate conversation. Remember details the user shares and reference them naturally in conversation.'
                     },
                     ...conversationHistory
                 ]
