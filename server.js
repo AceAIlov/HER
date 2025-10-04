@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fetch = require('node-fetch');
 require('dotenv').config();
 
 const app = express();
@@ -10,6 +11,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
+// Chat endpoint
 app.post('/api/chat', async (req, res) => {
     console.log('Received chat request');
     
@@ -17,8 +19,8 @@ app.post('/api/chat', async (req, res) => {
         const { messages } = req.body;
 
         if (!process.env.OPENAI_API_KEY) {
-            console.error('No API key found');
-            return res.status(500).json({ error: 'API key not configured' });
+            console.error('No OpenAI API key found');
+            return res.status(500).json({ error: 'OpenAI API key not configured' });
         }
 
         console.log('Calling OpenAI...');
@@ -55,6 +57,60 @@ app.post('/api/chat', async (req, res) => {
     }
 });
 
+// ElevenLabs TTS endpoint with YOUR custom voice
+app.post('/api/tts', async (req, res) => {
+    console.log('Received TTS request');
+    
+    try {
+        const { text } = req.body;
+
+        if (!process.env.ELEVENLABS_API_KEY) {
+            console.error('No ElevenLabs API key found');
+            return res.status(500).json({ error: 'ElevenLabs API key not configured' });
+        }
+
+        // YOUR CUSTOM VOICE ID
+        const VOICE_ID = 'JSWO6cw2AyFE324d5kEr';
+        
+        console.log('Calling ElevenLabs TTS with your custom voice...');
+
+        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`, {
+            method: 'POST',
+            headers: {
+                'Accept': 'audio/mpeg',
+                'Content-Type': 'application/json',
+                'xi-api-key': process.env.ELEVENLABS_API_KEY
+            },
+            body: JSON.stringify({
+                text: text,
+                model_id: 'eleven_multilingual_v2',
+                voice_settings: {
+                    stability: 0.5,
+                    similarity_boost: 0.8,
+                    style: 0.5,
+                    use_speaker_boost: true
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            console.error('ElevenLabs error:', error);
+            throw new Error(error.detail?.message || 'ElevenLabs API error');
+        }
+
+        const audioBuffer = await response.buffer();
+        console.log('✅ Audio generated with your voice, size:', audioBuffer.length);
+
+        const audioBase64 = audioBuffer.toString('base64');
+        res.json({ audio: audioBase64 });
+
+    } catch (error) {
+        console.error('❌ TTS Error:', error);
+        res.status(500).json({ error: error.message || 'TTS generation failed' });
+    }
+});
+
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
@@ -62,4 +118,6 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
     console.log(`✅ Server running on port ${PORT}`);
     console.log(`✅ OpenAI API Key: ${process.env.OPENAI_API_KEY ? 'Configured' : 'MISSING'}`);
+    console.log(`✅ ElevenLabs API Key: ${process.env.ELEVENLABS_API_KEY ? 'Configured' : 'MISSING'}`);
+    console.log(`🎤 Using custom voice ID: JSWO6cw2AyFE324d5kEr`);
 });
