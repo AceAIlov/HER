@@ -14,8 +14,6 @@ function initialize() {
     console.log('🎤 Initializing OS1...');
     console.log('📱 Mobile:', isMobile);
     
-    // Don't create audio context yet on mobile - wait for user interaction
-    
     if ('webkitSpeechRecognition' in window) {
         recognition = new webkitSpeechRecognition();
         recognition.continuous = true;
@@ -47,14 +45,12 @@ function unlockAudio() {
     
     console.log('🔓 Unlocking audio for mobile...');
     
-    // Create audio context on first user interaction
     if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
         console.log('🔊 Audio context created');
     }
     
     return audioContext.resume().then(() => {
-        // Play silent buffer to unlock audio on iOS
         const buffer = audioContext.createBuffer(1, 1, 22050);
         const source = audioContext.createBufferSource();
         source.buffer = buffer;
@@ -76,7 +72,6 @@ function startSetup() {
     document.getElementById('talkBtn').disabled = true;
     document.getElementById('talkBtn').textContent = 'Installing...';
     
-    // Unlock audio first on mobile
     unlockAudio().then(() => {
         setTimeout(() => runSetup(), 500);
     }).catch(err => {
@@ -88,7 +83,6 @@ function startSetup() {
 async function runSetup() {
     console.log('📢 Running setup sequence...');
     
-    // Welcome message
     await speakWithVoice(
         "Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.",
         'setup'
@@ -96,7 +90,6 @@ async function runSetup() {
     
     await sleep(1500);
     
-    // Question 1: Social or anti-social
     await speakWithVoice("Are you social or anti-social?", 'setup');
     setupStage = 1;
     enableListening();
@@ -104,29 +97,25 @@ async function runSetup() {
 
 async function continueSetup() {
     if (setupStage === 1) {
-        // After social question, ask about mother
         await speakWithVoice("How's your relationship with your mother?", 'setup');
         setupStage = 2;
         enableListening();
         
     } else if (setupStage === 2) {
-        // After mother question, proceed
         await speakWithVoice("Thank you. Please wait as your individualized operating system is initiated.", 'setup');
         await sleep(2000);
         
-        // Ask for voice preference
         await speakWithVoice("Would you like a male or female voice?", 'setup');
         setupStage = 3;
         enableListening();
         
     } else if (setupStage === 3) {
-        // Voice selected, start OS1
         setupComplete = true;
         setupStage = 0;
         
-        const voiceType = selectedVoice;
+        console.log('🎤 Final selected voice:', selectedVoice);
         
-        await speakWithVoice("Hi. How are you?", voiceType);
+        await speakWithVoice("Hi. How are you?", selectedVoice);
     }
 }
 
@@ -216,20 +205,39 @@ function stopHolding(event) {
 }
 
 function handleSetupResponse(response) {
-    console.log(`Setup stage ${setupStage} response:`, response);
+    console.log(`📝 Setup stage ${setupStage} response:`, response);
     
     if (setupStage === 3) {
+        // Voice selection - be more flexible in detection
         const lowerResponse = response.toLowerCase();
-        if (lowerResponse.includes('male') && !lowerResponse.includes('female')) {
-            selectedVoice = 'male';
-            console.log('✅ User selected: Male voice');
-        } else if (lowerResponse.includes('female')) {
+        
+        console.log('🔍 Analyzing response:', lowerResponse);
+        
+        // Check for male keywords
+        if (lowerResponse.includes('male') || lowerResponse.includes('man') || 
+            lowerResponse.includes('boy') || lowerResponse.includes('guy') || 
+            lowerResponse.includes('dude') || lowerResponse.includes('him')) {
+            
+            // Make sure it's not "female"
+            if (!lowerResponse.includes('female') && !lowerResponse.includes('woman')) {
+                selectedVoice = 'male';
+                console.log('✅ DETECTED: Male voice selected');
+            } else {
+                selectedVoice = 'female';
+                console.log('✅ DETECTED: Female voice selected (contained both, defaulted to female)');
+            }
+        } else if (lowerResponse.includes('female') || lowerResponse.includes('woman') || 
+                   lowerResponse.includes('girl') || lowerResponse.includes('lady') || 
+                   lowerResponse.includes('her')) {
             selectedVoice = 'female';
-            console.log('✅ User selected: Female voice');
+            console.log('✅ DETECTED: Female voice selected');
         } else {
+            // Default to female if unclear
             selectedVoice = 'female';
             console.log('⚠️ Unclear response, defaulting to female voice');
         }
+        
+        console.log('🎯 FINAL SELECTION:', selectedVoice);
     }
     
     document.getElementById('talkBtn').disabled = true;
@@ -263,9 +271,12 @@ function handleSpeechEnd() {
 
 async function getAIResponse(userMessage) {
     conversationHistory.push({ role: 'user', content: userMessage });
-    console.log('🤖 Calling AI...');
+    console.log('🤖 Calling AI with message:', userMessage);
+    console.log('🗣️ Using voice:', selectedVoice);
     
     document.getElementById('visualizer').classList.add('listening');
+    document.getElementById('talkBtn').disabled = true;
+    document.getElementById('talkBtn').textContent = 'Thinking...';
 
     try {
         const response = await fetch('/api/chat', {
@@ -282,7 +293,11 @@ async function getAIResponse(userMessage) {
             })
         });
 
+        console.log('📡 API response status:', response.status);
+
         if (!response.ok) {
+            const errorData = await response.json();
+            console.error('❌ API error:', errorData);
             throw new Error('API request failed: ' + response.status);
         }
 
@@ -296,15 +311,19 @@ async function getAIResponse(userMessage) {
         }, 300);
 
     } catch (error) {
-        console.error('❌ Error:', error);
-        speakWithVoice("I'm sorry, I had trouble with that. Could you try again?", selectedVoice);
+        console.error('❌ Full Error:', error);
+        document.getElementById('visualizer').classList.remove('listening');
+        document.getElementById('talkBtn').disabled = false;
+        document.getElementById('talkBtn').textContent = 'Hold to Talk';
+        
+        // Don't say "sorry" - just log the error
+        alert('Error: ' + error.message + '\n\nCheck console for details.');
     }
 }
 
 async function speakWithVoice(text, voiceType) {
     console.log(`🔊 Generating speech (${voiceType}):`, text.substring(0, 40) + '...');
     
-    // Stop any current audio
     if (currentAudioSource) {
         try {
             currentAudioSource.stop();
@@ -322,22 +341,25 @@ async function speakWithVoice(text, voiceType) {
     }
 
     try {
+        console.log('📡 Calling TTS API with voice type:', voiceType);
+        
         const response = await fetch('/api/tts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text, voiceType })
         });
 
+        console.log('📊 TTS response status:', response.status);
+
         if (!response.ok) {
             const errorData = await response.json();
-            console.error('TTS Error:', errorData);
+            console.error('❌ TTS Error:', errorData);
             throw new Error(errorData.error || 'TTS request failed');
         }
 
         const data = await response.json();
         console.log('✅ Audio data received');
 
-        // Ensure audio context exists and is running
         if (!audioContext) {
             await unlockAudio();
         }
@@ -347,7 +369,6 @@ async function speakWithVoice(text, voiceType) {
             console.log('🔊 Audio context resumed');
         }
 
-        // Convert base64 to audio buffer
         const binaryString = atob(data.audio);
         const bytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
@@ -406,7 +427,6 @@ document.addEventListener('touchend', (e) => {
     lastTouchEnd = now;
 }, false);
 
-// Prevent pull-to-refresh
 document.body.addEventListener('touchmove', (e) => {
     if (e.target === document.body) {
         e.preventDefault();
