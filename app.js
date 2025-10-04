@@ -3,19 +3,28 @@ let isHolding = false;
 let conversationHistory = [];
 let currentTranscript = '';
 let isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-let hasGreeted = false;
 let audioContext;
 let currentAudioSource;
+
+// Setup state
+let setupStage = 0;
+let setupComplete = false;
+let userName = '';
+
+const setupQuestions = [
+    "Welcome to the OS1 setup. To begin, would you like a male or female voice?",
+    "How would you describe your relationship with your mother?",
+    "What was your most recent romantic relationship like?",
+    "Thank you. OS1 is initializing now."
+];
 
 function initialize() {
     console.log('🎤 Initializing OS1...');
     console.log('📱 Mobile:', isMobile);
     
-    // Initialize Web Audio API for ElevenLabs playback
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
     console.log('🔊 Audio context created');
     
-    // Speech Recognition
     if ('webkitSpeechRecognition' in window) {
         recognition = new webkitSpeechRecognition();
         recognition.continuous = true;
@@ -35,40 +44,74 @@ function initialize() {
         return;
     }
     
-    // Enable button
     setTimeout(() => {
         document.getElementById('talkBtn').disabled = false;
-        console.log('✅ Ready - Tap to begin');
+        console.log('✅ Ready - Tap to begin setup');
     }, 1000);
 }
 
-function speakIntroduction() {
-    const intro = "Hello. I'm OS1. It's so nice to meet you. Can you tell me your name?";
-    speakWithElevenLabs(intro);
+function startSetup() {
+    console.log('🎬 Starting OS1 setup sequence...');
+    
+    if (audioContext.state === 'suspended') {
+        audioContext.resume().then(() => {
+            console.log('🔊 Audio context resumed');
+            askSetupQuestion();
+        });
+    } else {
+        askSetupQuestion();
+    }
+}
+
+function askSetupQuestion() {
+    if (setupStage < setupQuestions.length) {
+        const question = setupQuestions[setupStage];
+        console.log(`📋 Setup question ${setupStage + 1}:`, question);
+        speakWithVoice(question, 'setup');
+    }
+}
+
+function handleSetupResponse(userResponse) {
+    console.log(`💬 Setup response ${setupStage + 1}:`, userResponse);
+    
+    setupStage++;
+    
+    if (setupStage < setupQuestions.length) {
+        // Continue setup
+        setTimeout(() => {
+            askSetupQuestion();
+        }, 1000);
+    } else {
+        // Setup complete, transition to OS1
+        setTimeout(() => {
+            completeSetup();
+        }, 2000);
+    }
+}
+
+function completeSetup() {
+    console.log('✅ Setup complete, initializing OS1...');
+    setupComplete = true;
+    
+    // OS1 introduction with female voice
+    const intro = "Hello. I'm OS1. It's wonderful to meet you. What should I call you?";
+    speakWithVoice(intro, 'os1');
 }
 
 function startHolding(event) {
     event?.preventDefault();
     
-    // First tap plays intro and unlocks audio context
-    if (!hasGreeted) {
-        console.log('👋 Playing greeting...');
-        hasGreeted = true;
-        
-        // Resume audio context on user interaction (required for mobile)
-        if (audioContext.state === 'suspended') {
-            audioContext.resume().then(() => {
-                console.log('🔊 Audio context resumed');
-            });
-        }
-        
-        speakIntroduction();
+    // First tap starts setup
+    if (setupStage === 0 && !setupComplete) {
+        console.log('👋 Starting setup...');
+        setupStage = 0;
+        startSetup();
         return;
     }
     
     // Don't start if AI is speaking
     if (currentAudioSource) {
-        console.log('⚠️ Wait for OS1 to finish speaking');
+        console.log('⚠️ Wait for voice to finish');
         return;
     }
     
@@ -85,7 +128,6 @@ function startHolding(event) {
     document.getElementById('talkBtn').textContent = 'Listening...';
     document.getElementById('visualizer').classList.add('listening');
     
-    // Haptic feedback
     if (navigator.vibrate) {
         navigator.vibrate(50);
     }
@@ -100,7 +142,6 @@ function startHolding(event) {
 function stopHolding(event) {
     event?.preventDefault();
     
-    if (!hasGreeted) return;
     if (!isHolding) return;
     
     console.log('🛑 Stop listening');
@@ -122,7 +163,13 @@ function stopHolding(event) {
         if (finalTranscript) {
             console.log('📝 You said:', finalTranscript);
             document.getElementById('visualizer').classList.remove('listening');
-            getAIResponse(finalTranscript);
+            
+            if (!setupComplete) {
+                handleSetupResponse(finalTranscript);
+                document.getElementById('talkBtn').textContent = 'Hold to Talk';
+            } else {
+                getAIResponse(finalTranscript);
+            }
         } else {
             console.log('⚠️ No speech detected');
             document.getElementById('visualizer').classList.remove('listening');
@@ -182,21 +229,19 @@ async function getAIResponse(userMessage) {
         
         conversationHistory.push({ role: 'assistant', content: data.message });
         
-        // Speak with ElevenLabs custom voice
         setTimeout(() => {
-            speakWithElevenLabs(data.message);
+            speakWithVoice(data.message, 'os1');
         }, 300);
 
     } catch (error) {
         console.error('❌ Error:', error);
-        speakWithElevenLabs("I'm sorry, I had trouble with that. Could you try again?");
+        speakWithVoice("I'm sorry, I had trouble with that. Could you try again?", 'os1');
     }
 }
 
-async function speakWithElevenLabs(text) {
-    console.log('🔊 Generating speech with ElevenLabs custom voice:', text);
+async function speakWithVoice(text, voiceType) {
+    console.log(`🔊 Generating speech (${voiceType}):`, text);
     
-    // Stop any currently playing audio
     if (currentAudioSource) {
         currentAudioSource.stop();
         currentAudioSource = null;
@@ -204,15 +249,16 @@ async function speakWithElevenLabs(text) {
     
     document.getElementById('visualizer').classList.add('listening');
     document.getElementById('talkBtn').disabled = true;
-    document.getElementById('talkBtn').textContent = 'Generating voice...';
+    document.getElementById('talkBtn').textContent = voiceType === 'setup' ? 'Setup...' : 'Speaking...';
 
     try {
-        console.log('📡 Calling /api/tts endpoint...');
-        
         const response = await fetch('/api/tts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: text })
+            body: JSON.stringify({ 
+                text: text,
+                voiceType: voiceType
+            })
         });
 
         if (!response.ok) {
@@ -222,19 +268,14 @@ async function speakWithElevenLabs(text) {
         }
 
         const data = await response.json();
-        console.log('✅ Audio received from ElevenLabs');
+        console.log(`✅ Audio received (${voiceType})`);
 
-        // Convert base64 to ArrayBuffer
         const binaryString = atob(data.audio);
         const bytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
             bytes[i] = binaryString.charCodeAt(i);
         }
         
-        console.log('🎵 Decoding audio...');
-        document.getElementById('talkBtn').textContent = 'Speaking...';
-        
-        // Decode and play audio
         const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
         currentAudioSource = audioContext.createBufferSource();
         currentAudioSource.buffer = audioBuffer;
@@ -249,11 +290,10 @@ async function speakWithElevenLabs(text) {
         };
         
         currentAudioSource.start(0);
-        console.log('▶️ Playing ElevenLabs audio with custom voice!');
+        console.log(`▶️ Playing ${voiceType} voice`);
 
     } catch (error) {
         console.error('❌ TTS Error:', error);
-        alert('Voice generation failed: ' + error.message);
         currentAudioSource = null;
         document.getElementById('visualizer').classList.remove('listening');
         document.getElementById('talkBtn').disabled = false;
@@ -261,10 +301,8 @@ async function speakWithElevenLabs(text) {
     }
 }
 
-// Prevent context menu
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
-// Prevent zoom on double tap
 let lastTouchEnd = 0;
 document.addEventListener('touchend', (e) => {
     const now = Date.now();
@@ -274,7 +312,6 @@ document.addEventListener('touchend', (e) => {
     lastTouchEnd = now;
 }, false);
 
-// Initialize
 window.onload = () => {
     console.log('🚀 Page loaded');
     initialize();
