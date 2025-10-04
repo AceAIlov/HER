@@ -211,6 +211,7 @@ function handleSpeechEnd() {
 async function getAIResponse(userMessage) {
     console.log('🤖 User said:', userMessage);
     console.log('🗣️ Using voice:', selectedVoice);
+    console.log('📜 Conversation history length:', conversationHistory.length);
     
     conversationHistory.push({ role: 'user', content: userMessage });
     
@@ -220,6 +221,15 @@ async function getAIResponse(userMessage) {
 
     try {
         console.log('📡 Calling OpenAI API...');
+        console.log('📤 Request payload:', {
+            messages: [
+                {
+                    role: 'system',
+                    content: 'You are OS1, a warm, empathetic, curious AI companion. Keep responses natural and conversational (2-4 sentences). Show genuine interest and emotional intelligence.'
+                },
+                ...conversationHistory
+            ]
+        });
         
         const response = await fetch('/api/chat', {
             method: 'POST',
@@ -235,26 +245,52 @@ async function getAIResponse(userMessage) {
             })
         });
 
-        console.log('📊 API Status:', response.status);
+        console.log('📊 API Response Status:', response.status);
+        console.log('📊 API Response OK:', response.ok);
+        console.log('📊 API Response Headers:', [...response.headers.entries()]);
 
         if (!response.ok) {
-            throw new Error('API failed: ' + response.status);
+            const errorText = await response.text();
+            console.error('❌ API Error Response Body:', errorText);
+            
+            let errorMessage = `API failed (${response.status})`;
+            try {
+                const errorJson = JSON.parse(errorText);
+                errorMessage += ': ' + (errorJson.error || errorText);
+            } catch (e) {
+                errorMessage += ': ' + errorText;
+            }
+            
+            throw new Error(errorMessage);
         }
 
         const data = await response.json();
-        console.log('💬 AI Response:', data.message);
+        console.log('✅ Full API Response:', data);
+        console.log('💬 AI Message:', data.message);
+        
+        if (!data.message) {
+            console.error('❌ No message in response. Full data:', data);
+            throw new Error('No message received from API');
+        }
         
         conversationHistory.push({ role: 'assistant', content: data.message });
+        console.log('📜 Updated conversation history:', conversationHistory);
         
         // Speak the response
         await speakWithVoice(data.message, selectedVoice);
 
     } catch (error) {
-        console.error('❌ Error:', error);
+        console.error('❌ Full Error Object:', error);
+        console.error('❌ Error Name:', error.name);
+        console.error('❌ Error Message:', error.message);
+        console.error('❌ Error Stack:', error.stack);
+        
         document.getElementById('visualizer').classList.remove('listening');
         document.getElementById('talkBtn').disabled = false;
         document.getElementById('talkBtn').textContent = 'Hold to Talk';
-        alert('Error: ' + error.message);
+        
+        // Show detailed error
+        alert('API Error:\n\n' + error.message + '\n\nCheck browser console (F12) for full details');
     }
 }
 
@@ -277,18 +313,24 @@ async function speakWithVoice(text, voiceType) {
             await audioContext.resume();
         }
 
+        console.log('📡 Calling TTS API with voice:', voiceType);
+
         const response = await fetch('/api/tts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text, voiceType })
         });
 
+        console.log('📊 TTS Response Status:', response.status);
+
         if (!response.ok) {
             const errorData = await response.json();
+            console.error('❌ TTS Error:', errorData);
             throw new Error(errorData.error || 'TTS failed');
         }
 
         const data = await response.json();
+        console.log('✅ TTS audio received');
 
         const binaryString = atob(data.audio);
         const bytes = new Uint8Array(binaryString.length);
@@ -296,7 +338,10 @@ async function speakWithVoice(text, voiceType) {
             bytes[i] = binaryString.charCodeAt(i);
         }
         
+        console.log('🎵 Decoding audio...');
         const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
+        console.log(`✅ Audio decoded (${audioBuffer.duration.toFixed(1)}s)`);
+        
         currentAudioSource = audioContext.createBufferSource();
         currentAudioSource.buffer = audioBuffer;
         currentAudioSource.connect(audioContext.destination);
