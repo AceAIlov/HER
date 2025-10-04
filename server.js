@@ -22,7 +22,7 @@ app.post('/api/chat', async (req, res) => {
             return res.status(500).json({ error: 'OpenAI API key not configured' });
         }
 
-        console.log('🤖 Calling OpenAI...');
+        console.log('🤖 Calling OpenAI with GPT-3.5-turbo...');
 
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -31,7 +31,7 @@ app.post('/api/chat', async (req, res) => {
                 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
             },
             body: JSON.stringify({
-                model: 'gpt-4',
+                model: 'gpt-3.5-turbo',
                 messages: messages,
                 temperature: 0.9,
                 max_tokens: 150
@@ -132,6 +132,7 @@ app.listen(PORT, () => {
     console.log(`✅ Server running on port ${PORT}`);
     console.log(`✅ OpenAI API Key: ${process.env.OPENAI_API_KEY ? '✓ Configured' : '✗ MISSING'}`);
     console.log(`✅ ElevenLabs API Key: ${process.env.ELEVENLABS_API_KEY ? '✓ Configured' : '✗ MISSING'}`);
+    console.log(`🤖 Using model: gpt-3.5-turbo`);
     console.log(`🎤 Setup voice: GCH5LqLr0x1cLZVr5T10 (Your custom male voice)`);
     console.log(`🎤 Male companion: GCH5LqLr0x1cLZVr5T10 (Your custom male voice)`);
     console.log(`🎤 Female companion: JSWO6cw2AyFE324d5kEr (Your custom female voice)`);
