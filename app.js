@@ -1,16 +1,19 @@
 let recognition;
 let isHolding = false;
 let conversationHistory = [];
-let synth = window.speechSynthesis;
-let femaleVoice = null;
 let currentTranscript = '';
 let isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-let voicesLoaded = false;
 let hasGreeted = false;
+let audioContext;
+let currentAudioSource;
 
 function initialize() {
     console.log('🎤 Initializing OS1...');
     console.log('📱 Mobile:', isMobile);
+    
+    // Initialize Web Audio API for ElevenLabs playback
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    console.log('🔊 Audio context created');
     
     // Speech Recognition
     if ('webkitSpeechRecognition' in window) {
@@ -31,18 +34,6 @@ function initialize() {
         alert('❌ Speech recognition not supported. Use Chrome or Safari!');
         return;
     }
-
-    // Force load voices
-    loadVoices();
-    
-    const voiceInterval = setInterval(() => {
-        loadVoices();
-        if (voicesLoaded) {
-            clearInterval(voiceInterval);
-        }
-    }, 100);
-    
-    setTimeout(() => clearInterval(voiceInterval), 3000);
     
     // Enable button
     setTimeout(() => {
@@ -51,82 +42,32 @@ function initialize() {
     }, 1000);
 }
 
-function loadVoices() {
-    const voices = synth.getVoices();
-    
-    if (voices.length > 0 && !voicesLoaded) {
-        voicesLoaded = true;
-        console.log('🔊 All voices:', voices.map(v => `${v.name} | ${v.lang} | ${v.localService ? 'Local' : 'Network'}`));
-        
-        // ULTRA PREMIUM VOICES - Most human-like
-        femaleVoice = 
-            // iOS Premium Neural Voices (BEST)
-            voices.find(v => v.name === 'Samantha (Enhanced)') ||
-            voices.find(v => v.name === 'Ava (Premium)') ||
-            voices.find(v => v.name === 'Nicky') ||
-            voices.find(v => v.name === 'Samantha') ||
-            voices.find(v => v.name === 'Ava') ||
-            voices.find(v => v.name === 'Susan') ||
-            voices.find(v => v.name === 'Allison') ||
-            voices.find(v => v.name === 'Zoe') ||
-            
-            // Google Neural/Wavenet Voices (HIGHEST QUALITY)
-            voices.find(v => v.name.includes('Google US English Female') && v.name.includes('Wavenet')) ||
-            voices.find(v => v.name.includes('en-US-Wavenet-F')) ||
-            voices.find(v => v.name.includes('en-US-Wavenet-C')) ||
-            voices.find(v => v.name.includes('en-US-Wavenet-E')) ||
-            voices.find(v => v.name.includes('en-US-Neural2-F')) ||
-            voices.find(v => v.name.includes('en-US-Neural2-C')) ||
-            voices.find(v => v.name.includes('en-US-Neural2-E')) ||
-            voices.find(v => v.name.includes('Google US English Female')) ||
-            voices.find(v => v.name.includes('en-us-x-sfg-network')) ||
-            voices.find(v => v.name.includes('en-us-x-tpf-network')) ||
-            voices.find(v => v.name.includes('en-us-x-iob-network')) ||
-            
-            // Microsoft Azure Neural Voices (PREMIUM)
-            voices.find(v => v.name.includes('Microsoft Aria Online (Natural)')) ||
-            voices.find(v => v.name.includes('Microsoft Jenny Online (Natural)')) ||
-            voices.find(v => v.name.includes('Microsoft Michelle Online (Natural)')) ||
-            voices.find(v => v.name.includes('Microsoft Sonia Online (Natural)')) ||
-            voices.find(v => v.name.includes('Natural') && v.lang === 'en-US') ||
-            
-            // Amazon Polly Neural Voices
-            voices.find(v => v.name.includes('Joanna (Neural)')) ||
-            voices.find(v => v.name.includes('Kendra (Neural)')) ||
-            voices.find(v => v.name.includes('Kimberly (Neural)')) ||
-            voices.find(v => v.name.includes('Salli (Neural)')) ||
-            
-            // Standard Premium voices
-            voices.find(v => v.name === 'Karen' && v.lang === 'en-AU') ||
-            voices.find(v => v.name.includes('Microsoft Zira Desktop') && v.lang === 'en-US') ||
-            voices.find(v => v.name.toLowerCase().includes('female') && v.lang === 'en-US') ||
-            voices.find(v => v.lang === 'en-US' && !v.localService) || // Prefer network voices
-            voices.find(v => v.lang === 'en-US') ||
-            voices.find(v => v.lang.startsWith('en')) ||
-            voices[0];
-        
-        console.log('✅ Selected PREMIUM voice:', femaleVoice.name, '(' + femaleVoice.lang + ')', femaleVoice.localService ? '[Local]' : '[Network]');
-    }
-}
-
 function speakIntroduction() {
     const intro = "Hello. I'm OS1. It's so nice to meet you. Can you tell me your name?";
-    speak(intro);
+    speakWithElevenLabs(intro);
 }
 
 function startHolding(event) {
     event?.preventDefault();
     
-    // First tap plays intro, doesn't record
+    // First tap plays intro and unlocks audio context
     if (!hasGreeted) {
         console.log('👋 Playing greeting...');
         hasGreeted = true;
+        
+        // Resume audio context on user interaction (required for mobile)
+        if (audioContext.state === 'suspended') {
+            audioContext.resume().then(() => {
+                console.log('🔊 Audio context resumed');
+            });
+        }
+        
         speakIntroduction();
         return;
     }
     
     // Don't start if AI is speaking
-    if (synth.speaking) {
+    if (currentAudioSource) {
         console.log('⚠️ Wait for OS1 to finish speaking');
         return;
     }
@@ -159,9 +100,7 @@ function startHolding(event) {
 function stopHolding(event) {
     event?.preventDefault();
     
-    // Ignore if we haven't greeted yet
     if (!hasGreeted) return;
-    
     if (!isHolding) return;
     
     console.log('🛑 Stop listening');
@@ -170,7 +109,6 @@ function stopHolding(event) {
     document.getElementById('talkBtn').classList.remove('holding');
     document.getElementById('talkBtn').textContent = 'Processing...';
     
-    // Haptic feedback
     if (navigator.vibrate) {
         navigator.vibrate(30);
     }
@@ -179,7 +117,6 @@ function stopHolding(event) {
         recognition.stop();
     } catch (e) {}
     
-    // Wait for final speech results
     setTimeout(() => {
         const finalTranscript = currentTranscript.trim();
         if (finalTranscript) {
@@ -245,75 +182,83 @@ async function getAIResponse(userMessage) {
         
         conversationHistory.push({ role: 'assistant', content: data.message });
         
-        // Small delay before speaking
+        // Speak with ElevenLabs custom voice
         setTimeout(() => {
-            speak(data.message);
+            speakWithElevenLabs(data.message);
         }, 300);
 
     } catch (error) {
         console.error('❌ Error:', error);
-        speak("I'm sorry, I had trouble with that. Could you try again?");
+        speakWithElevenLabs("I'm sorry, I had trouble with that. Could you try again?");
     }
 }
 
-function speak(text) {
-    console.log('🔊 Speaking:', text);
+async function speakWithElevenLabs(text) {
+    console.log('🔊 Generating speech with ElevenLabs custom voice:', text);
     
-    // Cancel any ongoing speech
-    synth.cancel();
+    // Stop any currently playing audio
+    if (currentAudioSource) {
+        currentAudioSource.stop();
+        currentAudioSource = null;
+    }
     
-    // Wait for cancel to complete
-    setTimeout(() => {
-        if (!voicesLoaded) {
-            loadVoices();
+    document.getElementById('visualizer').classList.add('listening');
+    document.getElementById('talkBtn').disabled = true;
+    document.getElementById('talkBtn').textContent = 'Generating voice...';
+
+    try {
+        console.log('📡 Calling /api/tts endpoint...');
+        
+        const response = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: text })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error('❌ TTS API Error:', errorData);
+            throw new Error(errorData.error || 'TTS request failed');
+        }
+
+        const data = await response.json();
+        console.log('✅ Audio received from ElevenLabs');
+
+        // Convert base64 to ArrayBuffer
+        const binaryString = atob(data.audio);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
         }
         
-        const utterance = new SpeechSynthesisUtterance(text);
+        console.log('🎵 Decoding audio...');
+        document.getElementById('talkBtn').textContent = 'Speaking...';
         
-        // ULTRA-REALISTIC HUMAN VOICE SETTINGS
-        utterance.voice = femaleVoice;
-        utterance.lang = 'en-US';
+        // Decode and play audio
+        const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
+        currentAudioSource = audioContext.createBufferSource();
+        currentAudioSource.buffer = audioBuffer;
+        currentAudioSource.connect(audioContext.destination);
         
-        // Perfect human-like speech parameters
-        utterance.rate = 0.85;      // Natural conversational pace
-        utterance.pitch = 1.15;     // Warm, friendly feminine pitch
-        utterance.volume = 1.0;     // Full volume
-        
-        console.log('🎤 Ultra-premium voice:', utterance.voice ? utterance.voice.name : 'default');
-        
-        utterance.onstart = () => {
-            console.log('▶️ Speaking...');
-            document.getElementById('visualizer').classList.add('listening');
-            document.getElementById('talkBtn').disabled = true;
-            document.getElementById('talkBtn').textContent = 'Speaking...';
-        };
-
-        utterance.onend = () => {
+        currentAudioSource.onended = () => {
             console.log('⏹️ Speech finished');
+            currentAudioSource = null;
             document.getElementById('visualizer').classList.remove('listening');
             document.getElementById('talkBtn').disabled = false;
             document.getElementById('talkBtn').textContent = 'Hold to Talk';
         };
-
-        utterance.onerror = (e) => {
-            console.error('❌ Speech error:', e);
-            document.getElementById('visualizer').classList.remove('listening');
-            document.getElementById('talkBtn').disabled = false;
-            document.getElementById('talkBtn').textContent = 'Hold to Talk';
-        };
-
-        synth.speak(utterance);
-        console.log('✅ Ultra-realistic speech queued');
         
-    }, 200);
-}
+        currentAudioSource.start(0);
+        console.log('▶️ Playing ElevenLabs audio with custom voice!');
 
-// Voice loading
-if (speechSynthesis.onvoiceschanged !== undefined) {
-    speechSynthesis.onvoiceschanged = () => {
-        console.log('🔄 Voices changed');
-        loadVoices();
-    };
+    } catch (error) {
+        console.error('❌ TTS Error:', error);
+        alert('Voice generation failed: ' + error.message);
+        currentAudioSource = null;
+        document.getElementById('visualizer').classList.remove('listening');
+        document.getElementById('talkBtn').disabled = false;
+        document.getElementById('talkBtn').textContent = 'Hold to Talk';
+    }
 }
 
 // Prevent context menu
@@ -333,12 +278,4 @@ document.addEventListener('touchend', (e) => {
 window.onload = () => {
     console.log('🚀 Page loaded');
     initialize();
-    
-    document.addEventListener('touchstart', () => {
-        if (!voicesLoaded) {
-            loadVoices();
-        }
-    }, { once: true });
 };
-
-loadVoices();
