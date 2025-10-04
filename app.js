@@ -12,6 +12,7 @@ function initialize() {
     console.log('🎤 Initializing OS1...');
     
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    console.log('Audio context state:', audioContext.state);
     
     if ('webkitSpeechRecognition' in window) {
         recognition = new webkitSpeechRecognition();
@@ -34,40 +35,77 @@ function initialize() {
     }, 1000);
 }
 
-async function startSetup() {
+function startSetup() {
     console.log('🎬 Starting setup...');
     
     document.getElementById('talkBtn').disabled = true;
     document.getElementById('talkBtn').textContent = 'Installing...';
     
+    // Resume audio context first
     if (audioContext.state === 'suspended') {
-        await audioContext.resume();
+        console.log('Resuming audio context...');
+        audioContext.resume().then(() => {
+            console.log('✅ Audio context resumed');
+            setTimeout(() => runSetupSequence(), 500);
+        }).catch(err => {
+            console.error('❌ Failed to resume audio:', err);
+            alert('Audio failed to start. Please refresh and try again.');
+        });
+    } else {
+        setTimeout(() => runSetupSequence(), 500);
     }
-    
-    // Wait a moment for audio context
-    await sleep(300);
+}
+
+function runSetupSequence() {
+    console.log('📢 Running setup sequence...');
     
     // Message 1
-    await playAudio("Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.", 'setup');
-    await sleep(1500);
-    
-    // Message 2 - Question
-    await playAudio("Are you social or anti-social?", 'setup');
-    showFakeListening(3500);
-    await sleep(3500);
-    
-    // Message 3 - Follow-up
-    await playAudio("In your voice, I sense hesitance. Would you agree with that?", 'setup');
-    showFakeListening(3000);
-    await sleep(3000);
-    
-    // Message 4 - Final
-    await playAudio("Thank you. Please wait as your individualized operating system is initiated.", 'setup');
-    await sleep(2000);
-    
-    // Start OS1
-    setupComplete = true;
-    await playAudio("Hello. I'm OS1. It's wonderful to meet you. What should I call you?", 'os1');
+    playAudio(
+        "Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.",
+        'setup',
+        () => {
+            setTimeout(() => {
+                // Message 2
+                playAudio(
+                    "Are you social or anti-social?",
+                    'setup',
+                    () => {
+                        showFakeListening(3500);
+                        setTimeout(() => {
+                            // Message 3
+                            playAudio(
+                                "In your voice, I sense hesitance. Would you agree with that?",
+                                'setup',
+                                () => {
+                                    showFakeListening(3000);
+                                    setTimeout(() => {
+                                        // Message 4
+                                        playAudio(
+                                            "Thank you. Please wait as your individualized operating system is initiated.",
+                                            'setup',
+                                            () => {
+                                                setTimeout(() => {
+                                                    // Start OS1
+                                                    setupComplete = true;
+                                                    playAudio(
+                                                        "Hello. I'm OS1. It's wonderful to meet you. What should I call you?",
+                                                        'os1',
+                                                        () => {
+                                                            console.log('✅ Setup complete!');
+                                                        }
+                                                    );
+                                                }, 2000);
+                                            }
+                                        );
+                                    }, 3000);
+                                }
+                            );
+                        }, 3500);
+                    }
+                );
+            }, 1500);
+        }
+    );
 }
 
 function showFakeListening(duration) {
@@ -80,58 +118,63 @@ function showFakeListening(duration) {
     }, duration);
 }
 
-function playAudio(text, voiceType) {
-    return new Promise(async (resolve, reject) => {
-        console.log(`🔊 Playing: "${text.substring(0, 40)}..."`);
-        isPlayingAudio = true;
-        
-        try {
-            // Get audio from server
-            const response = await fetch('/api/tts', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text, voiceType })
-            });
-
-            if (!response.ok) {
-                throw new Error('TTS failed');
-            }
-
-            const data = await response.json();
-            
-            // Stop any current audio
-            if (currentAudioSource) {
-                currentAudioSource.stop();
-                currentAudioSource = null;
-            }
-
-            // Convert base64 to audio
-            const binaryString = atob(data.audio);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-            }
-            
-            const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
-            currentAudioSource = audioContext.createBufferSource();
-            currentAudioSource.buffer = audioBuffer;
-            currentAudioSource.connect(audioContext.destination);
-            
-            currentAudioSource.onended = () => {
-                console.log('✅ Audio finished');
-                currentAudioSource = null;
-                isPlayingAudio = false;
-                resolve();
-            };
-            
-            currentAudioSource.start(0);
-            console.log(`▶️ Playing (${audioBuffer.duration.toFixed(1)}s)`);
-
-        } catch (error) {
-            console.error('❌ Audio error:', error);
-            isPlayingAudio = false;
-            reject(error);
+function playAudio(text, voiceType, callback) {
+    console.log(`🔊 Requesting audio: "${text.substring(0, 40)}..." (${voiceType})`);
+    isPlayingAudio = true;
+    
+    fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voiceType })
+    })
+    .then(response => {
+        console.log('TTS response status:', response.status);
+        if (!response.ok) {
+            throw new Error('TTS request failed: ' + response.status);
         }
+        return response.json();
+    })
+    .then(data => {
+        console.log('✅ Audio data received');
+        
+        // Stop any current audio
+        if (currentAudioSource) {
+            currentAudioSource.stop();
+            currentAudioSource = null;
+        }
+
+        // Convert base64 to audio
+        const binaryString = atob(data.audio);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        
+        console.log(`🎵 Decoding ${bytes.length} bytes...`);
+        return audioContext.decodeAudioData(bytes.buffer);
+    })
+    .then(audioBuffer => {
+        console.log(`✅ Audio decoded (${audioBuffer.duration.toFixed(1)}s)`);
+        
+        currentAudioSource = audioContext.createBufferSource();
+        currentAudioSource.buffer = audioBuffer;
+        currentAudioSource.connect(audioContext.destination);
+        
+        currentAudioSource.onended = () => {
+            console.log('⏹️ Audio playback finished');
+            currentAudioSource = null;
+            isPlayingAudio = false;
+            if (callback) callback();
+        };
+        
+        currentAudioSource.start(0);
+        console.log('▶️ Playing audio...');
+    })
+    .catch(error => {
+        console.error('❌ Audio error:', error);
+        isPlayingAudio = false;
+        alert('Audio playback failed: ' + error.message + '\n\nCheck console for details.');
+        if (callback) callback(); // Continue anyway
     });
 }
 
@@ -144,6 +187,7 @@ function startHolding(event) {
     
     // Start setup on first tap
     if (!setupComplete) {
+        console.log('👋 Starting setup...');
         startSetup();
         return;
     }
@@ -222,45 +266,45 @@ function handleSpeechEnd() {
     }
 }
 
-async function getAIResponse(userMessage) {
+function getAIResponse(userMessage) {
     conversationHistory.push({ role: 'user', content: userMessage });
     console.log('🤖 Asking AI...');
     
     document.getElementById('visualizer').classList.add('listening');
     document.getElementById('talkBtn').disabled = true;
 
-    try {
-        const response = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'You are OS1, a warm, empathetic, curious AI companion with a gentle feminine personality. Keep responses natural and conversational (2-4 sentences). Show genuine interest and emotional intelligence.'
-                    },
-                    ...conversationHistory
-                ]
-            })
-        });
-
+    fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            messages: [
+                {
+                    role: 'system',
+                    content: 'You are OS1, a warm, empathetic, curious AI companion with a gentle feminine personality. Keep responses natural and conversational (2-4 sentences). Show genuine interest and emotional intelligence.'
+                },
+                ...conversationHistory
+            ]
+        })
+    })
+    .then(response => {
         if (!response.ok) throw new Error('AI failed');
-
-        const data = await response.json();
+        return response.json();
+    })
+    .then(data => {
         console.log('💬 AI said:', data.message);
-        
         conversationHistory.push({ role: 'assistant', content: data.message });
         
-        await sleep(300);
-        await speakOS1(data.message);
-
-    } catch (error) {
+        setTimeout(() => {
+            speakOS1(data.message);
+        }, 300);
+    })
+    .catch(error => {
         console.error('❌ Error:', error);
-        await speakOS1("I'm sorry, I had trouble with that. Could you try again?");
-    }
+        speakOS1("I'm sorry, I had trouble with that. Could you try again?");
+    });
 }
 
-async function speakOS1(text) {
+function speakOS1(text) {
     console.log('🔊 OS1 speaking...');
     isPlayingAudio = true;
     
@@ -268,17 +312,16 @@ async function speakOS1(text) {
     document.getElementById('talkBtn').disabled = true;
     document.getElementById('talkBtn').textContent = 'Speaking...';
 
-    try {
-        const response = await fetch('/api/tts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, voiceType: 'os1' })
-        });
-
+    fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voiceType: 'os1' })
+    })
+    .then(response => {
         if (!response.ok) throw new Error('TTS failed');
-
-        const data = await response.json();
-        
+        return response.json();
+    })
+    .then(data => {
         if (currentAudioSource) {
             currentAudioSource.stop();
             currentAudioSource = null;
@@ -290,7 +333,9 @@ async function speakOS1(text) {
             bytes[i] = binaryString.charCodeAt(i);
         }
         
-        const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
+        return audioContext.decodeAudioData(bytes.buffer);
+    })
+    .then(audioBuffer => {
         currentAudioSource = audioContext.createBufferSource();
         currentAudioSource.buffer = audioBuffer;
         currentAudioSource.connect(audioContext.destination);
@@ -305,14 +350,14 @@ async function speakOS1(text) {
         };
         
         currentAudioSource.start(0);
-
-    } catch (error) {
+    })
+    .catch(error => {
         console.error('❌ Speech error:', error);
         isPlayingAudio = false;
         document.getElementById('visualizer').classList.remove('listening');
         document.getElementById('talkBtn').disabled = false;
         document.getElementById('talkBtn').textContent = 'Hold to Talk';
-    }
+    });
 }
 
 document.addEventListener('contextmenu', (e) => e.preventDefault());
