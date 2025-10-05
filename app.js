@@ -14,7 +14,6 @@ function initialize() {
     console.log('🎤 Initializing OS1...');
     console.log('📱 Mobile:', isMobile);
     
-    // Don't create audio context yet on mobile
     if (!isMobile) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
@@ -50,7 +49,6 @@ function startSetup() {
     document.getElementById('talkBtn').disabled = true;
     document.getElementById('talkBtn').textContent = 'Installing...';
     
-    // Create audio context on mobile on first tap
     if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
@@ -136,20 +134,17 @@ function startHolding(event) {
     console.log('👆 Button pressed');
     console.log('Setup started:', setupStarted, 'Complete:', setupComplete, 'Stage:', setupStage);
     
-    // First tap - start setup
     if (!setupStarted && !setupComplete && setupStage === 0) {
         console.log('🎬 Initiating setup...');
         startSetup();
         return;
     }
     
-    // Don't allow input if audio is playing
     if (currentAudioSource) {
         console.log('⚠️ Wait for voice to finish');
         return;
     }
     
-    // Don't allow if not ready
     if (!setupComplete && setupStage === 0) {
         console.log('⚠️ Setup not ready yet');
         return;
@@ -232,19 +227,35 @@ function handleSetupResponse(response) {
     
     if (setupStage === 3) {
         const lowerResponse = response.toLowerCase();
+        console.log('🔍 Analyzing voice selection:', lowerResponse);
         
-        if (lowerResponse.includes('male') && !lowerResponse.includes('female')) {
+        const hasMale = lowerResponse.includes('male') || 
+                       lowerResponse.includes('man') || 
+                       lowerResponse.includes('guy') || 
+                       lowerResponse.includes('dude') || 
+                       lowerResponse.includes('him');
+        
+        const hasFemale = lowerResponse.includes('female') || 
+                         lowerResponse.includes('woman') || 
+                         lowerResponse.includes('girl') || 
+                         lowerResponse.includes('lady') || 
+                         lowerResponse.includes('her');
+        
+        console.log('🔍 Has male keywords:', hasMale);
+        console.log('🔍 Has female keywords:', hasFemale);
+        
+        if (hasMale && !hasFemale) {
             selectedVoice = 'male';
-            console.log('✅ Male voice selected');
-        } else if (lowerResponse.includes('female')) {
+            console.log('✅✅✅ MALE VOICE SELECTED');
+        } else if (hasFemale) {
             selectedVoice = 'female';
-            console.log('✅ Female voice selected');
+            console.log('✅✅✅ FEMALE VOICE SELECTED');
         } else {
             selectedVoice = 'female';
-            console.log('⚠️ Defaulting to female');
+            console.log('⚠️ Unclear, defaulting to female');
         }
         
-        console.log('🎯 Final voice:', selectedVoice);
+        console.log('🎯🎯🎯 FINAL SELECTED VOICE:', selectedVoice);
     }
     
     document.getElementById('talkBtn').disabled = true;
@@ -252,7 +263,7 @@ function handleSetupResponse(response) {
     
     console.log('⏱️ Waiting 600ms before continuing...');
     setTimeout(() => {
-        console.log('▶️ Calling continueSetup()');
+        console.log('▶️ Calling continueSetup() with voice:', selectedVoice);
         continueSetup();
     }, 600);
 }
@@ -278,6 +289,7 @@ function handleSpeechEnd() {
 async function getAIResponse(userMessage) {
     console.log('🤖 User said:', userMessage);
     console.log('🗣️ Using voice:', selectedVoice);
+    console.log('📜 Conversation history:', conversationHistory);
     
     conversationHistory.push({ role: 'user', content: userMessage });
     
@@ -286,6 +298,8 @@ async function getAIResponse(userMessage) {
     document.getElementById('talkBtn').textContent = 'Thinking...';
 
     try {
+        console.log('📡 Calling /api/chat...');
+        
         const response = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -300,30 +314,57 @@ async function getAIResponse(userMessage) {
             })
         });
 
+        console.log('📊 Response status:', response.status);
+        console.log('📊 Response ok:', response.ok);
+
         if (!response.ok) {
-            throw new Error('API failed: ' + response.status);
+            const errorText = await response.text();
+            console.error('❌ API Error Response:', errorText);
+            
+            let errorJson;
+            try {
+                errorJson = JSON.parse(errorText);
+                console.error('❌ Parsed error:', errorJson);
+            } catch (e) {
+                console.error('❌ Could not parse error as JSON');
+            }
+            
+            throw new Error(`API failed: ${response.status} - ${errorText}`);
         }
 
         const data = await response.json();
-        console.log('💬 AI Response:', data.message);
+        console.log('✅ Full response:', data);
+        console.log('💬 AI message:', data.message);
+        
+        if (!data.message) {
+            console.error('❌ No message in response');
+            throw new Error('No message received from API');
+        }
         
         conversationHistory.push({ role: 'assistant', content: data.message });
+        console.log('📜 Updated conversation history:', conversationHistory);
         
+        console.log('🔊 About to speak with voice:', selectedVoice);
         await speakWithVoice(data.message, selectedVoice);
 
     } catch (error) {
-        console.error('❌ Error:', error);
+        console.error('❌ Full error object:', error);
+        console.error('❌ Error message:', error.message);
+        console.error('❌ Error stack:', error.stack);
+        
         document.getElementById('visualizer').classList.remove('listening');
         document.getElementById('talkBtn').disabled = false;
         document.getElementById('talkBtn').textContent = 'Hold to Talk';
-        alert('Error: ' + error.message);
+        
+        alert('Error communicating with AI:\n\n' + error.message + '\n\nCheck browser console (F12) and Render logs for details.');
     }
 }
 
 async function speakWithVoice(text, voiceType) {
-    console.log(`🔊 Speaking (${voiceType}):`, text.substring(0, 50) + '...');
+    console.log(`🔊 speakWithVoice called`);
+    console.log(`   Text: "${text.substring(0, 50)}..."`);
+    console.log(`   Voice type: "${voiceType}"`);
     
-    // Stop any current audio
     if (currentAudioSource) {
         try {
             currentAudioSource.stop();
@@ -336,7 +377,6 @@ async function speakWithVoice(text, voiceType) {
     document.getElementById('talkBtn').textContent = voiceType === 'setup' ? 'Installing...' : 'Speaking...';
 
     try {
-        // Ensure audio context is ready
         if (!audioContext) {
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
         }
@@ -346,18 +386,24 @@ async function speakWithVoice(text, voiceType) {
             await audioContext.resume();
         }
 
+        console.log('📡 Calling /api/tts with voice type:', voiceType);
+        
         const response = await fetch('/api/tts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text, voiceType })
         });
 
+        console.log('📊 TTS Response status:', response.status);
+
         if (!response.ok) {
             const errorData = await response.json();
+            console.error('❌ TTS Error:', errorData);
             throw new Error(errorData.error || 'TTS failed');
         }
 
         const data = await response.json();
+        console.log('✅ TTS audio received');
 
         const binaryString = atob(data.audio);
         const bytes = new Uint8Array(binaryString.length);
@@ -387,7 +433,7 @@ async function speakWithVoice(text, voiceType) {
             };
             
             currentAudioSource.start(0);
-            console.log(`▶️ Playing audio (${audioBuffer.duration.toFixed(1)}s)`);
+            console.log(`▶️ Playing audio (${audioBuffer.duration.toFixed(1)}s) with voice: ${voiceType}`);
         });
 
     } catch (error) {
