@@ -10,7 +10,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
-// Chat endpoint - Using modern Responses API
+// Chat endpoint - Using standard chat completions
 app.post('/api/chat', async (req, res) => {
     console.log('📨 Received chat request');
     
@@ -22,9 +22,9 @@ app.post('/api/chat', async (req, res) => {
             return res.status(500).json({ error: 'OpenAI API key not configured' });
         }
 
-        console.log('🤖 Calling OpenAI Responses API with gpt-4o-mini...');
+        console.log('🤖 Calling OpenAI with gpt-4o-mini...');
 
-        const response = await fetch('https://api.openai.com/v1/responses', {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -32,51 +32,29 @@ app.post('/api/chat', async (req, res) => {
             },
             body: JSON.stringify({
                 model: 'gpt-4o-mini',
-                input: messages.map(m => ({
-                    role: m.role,
-                    content: [{ type: 'text', text: m.content }]
-                })),
+                messages: messages,
                 temperature: 0.7,
-                max_output_tokens: 256
+                max_tokens: 256
             })
         });
 
         console.log('📊 OpenAI Status:', response.status);
 
         const data = await response.json();
-        console.log('📦 OpenAI Response:', JSON.stringify(data, null, 2));
         
         if (data.error) {
             console.error('❌ OpenAI error:', data.error);
-            
-            if (data.error.code === 'insufficient_quota') {
-                return res.status(500).json({ 
-                    error: 'OpenAI API quota exceeded. Please add credits at https://platform.openai.com/account/billing' 
-                });
-            }
-            
-            if (data.error.code === 'invalid_api_key') {
-                return res.status(500).json({ 
-                    error: 'Invalid OpenAI API key. Please check your key at https://platform.openai.com/api-keys' 
-                });
-            }
-            
             return res.status(500).json({ error: data.error.message || 'OpenAI API error' });
         }
 
-        // Extract output from Responses API format
-        const output =
-            data.output_text ??
-            (data.output?.[0]?.content?.find(c => c.type === 'output_text')?.text) ??
-            data;
-        
-        if (typeof output !== 'string') {
-            console.error('❌ Unexpected Responses API shape:', data);
+        if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+            console.error('❌ Unexpected response format:', data);
             return res.status(500).json({ error: 'Invalid response from OpenAI' });
         }
 
-        console.log('✅ OpenAI response:', output);
-        res.json({ message: output });
+        const message = data.choices[0].message.content;
+        console.log('✅ OpenAI response:', message);
+        res.json({ message: message });
 
     } catch (error) {
         console.error('❌ Server Error:', error);
@@ -102,14 +80,18 @@ app.post('/api/tts', async (req, res) => {
         // Select voice based on type
         let VOICE_ID;
         if (voiceType === 'setup') {
-            VOICE_ID = 'GCH5LqLr0x1cLZVr5T10';
+            VOICE_ID = 'GCH5LqLr0x1cLZVr5T10'; // Male setup voice
+            console.log('🔊 Using SETUP voice (male):', VOICE_ID);
         } else if (voiceType === 'male') {
-            VOICE_ID = 'GCH5LqLr0x1cLZVr5T10';
+            VOICE_ID = 'GCH5LqLr0x1cLZVr5T10'; // Male companion
+            console.log('🔊 Using MALE companion voice:', VOICE_ID);
+        } else if (voiceType === 'female') {
+            VOICE_ID = 'JSWO6cw2AyFE324d5kEr'; // Female companion
+            console.log('🔊 Using FEMALE companion voice:', VOICE_ID);
         } else {
-            VOICE_ID = 'JSWO6cw2AyFE324d5kEr';
+            VOICE_ID = 'JSWO6cw2AyFE324d5kEr'; // Default to female
+            console.log('🔊 Using DEFAULT voice (female):', VOICE_ID);
         }
-        
-        console.log('🔊 Using voice ID:', VOICE_ID);
 
         const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`, {
             method: 'POST',
@@ -161,8 +143,8 @@ app.listen(PORT, () => {
     console.log(`✅ Server running on port ${PORT}`);
     console.log(`✅ OpenAI API Key: ${process.env.OPENAI_API_KEY ? '✓ Configured' : '✗ MISSING'}`);
     console.log(`✅ ElevenLabs API Key: ${process.env.ELEVENLABS_API_KEY ? '✓ Configured' : '✗ MISSING'}`);
-    console.log(`🤖 Using model: gpt-4o-mini (modern Responses API)`);
-    console.log(`🎤 Setup voice: GCH5LqLr0x1cLZVr5T10`);
+    console.log(`🤖 Using model: gpt-4o-mini`);
+    console.log(`🎤 Setup voice: GCH5LqLr0x1cLZVr5T10 (Male)`);
     console.log(`🎤 Male companion: GCH5LqLr0x1cLZVr5T10`);
     console.log(`🎤 Female companion: JSWO6cw2AyFE324d5kEr`);
     console.log('='.repeat(50));
