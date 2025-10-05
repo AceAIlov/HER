@@ -22,7 +22,7 @@ app.post('/api/chat', async (req, res) => {
             return res.status(500).json({ error: 'OpenAI API key not configured' });
         }
 
-        console.log('🤖 Calling OpenAI with gpt-4o-mini...');
+        console.log('🤖 Calling OpenAI with gpt-3.5-turbo...');
 
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -31,7 +31,7 @@ app.post('/api/chat', async (req, res) => {
                 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
             },
             body: JSON.stringify({
-                model: 'gpt-4o-mini',
+                model: 'gpt-3.5-turbo',  // Changed from gpt-4o-mini
                 messages: messages,
                 temperature: 0.7,
                 max_tokens: 256
@@ -44,6 +44,11 @@ app.post('/api/chat', async (req, res) => {
         
         if (data.error) {
             console.error('❌ OpenAI error:', data.error);
+            // More detailed error logging
+            if (data.error.type === 'insufficient_quota') {
+                console.error('💳 Quota issue - Check: https://platform.openai.com/account/usage');
+                console.error('💳 Billing: https://platform.openai.com/account/billing');
+            }
             return res.status(500).json({ error: data.error.message || 'OpenAI API error' });
         }
 
@@ -143,7 +148,7 @@ app.listen(PORT, () => {
     console.log(`✅ Server running on port ${PORT}`);
     console.log(`✅ OpenAI API Key: ${process.env.OPENAI_API_KEY ? '✓ Configured' : '✗ MISSING'}`);
     console.log(`✅ ElevenLabs API Key: ${process.env.ELEVENLABS_API_KEY ? '✓ Configured' : '✗ MISSING'}`);
-    console.log(`🤖 Using model: gpt-4o-mini`);
+    console.log(`🤖 Using model: gpt-3.5-turbo`);  // Updated
     console.log(`🎤 Setup voice: GCH5LqLr0x1cLZVr5T10 (Male)`);
     console.log(`🎤 Male companion: GCH5LqLr0x1cLZVr5T10`);
     console.log(`🎤 Female companion: JSWO6cw2AyFE324d5kEr`);
