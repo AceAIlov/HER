@@ -32,78 +32,6 @@
             align-items: center;
             color: #F5F5DC;
             touch-action: manipulation;
-            transition: background 0.5s ease;
-        }
-
-        /* Different color themes for personalization */
-        body.theme-samantha { background: #C94A3A; }
-        body.theme-nova { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-        body.theme-luna { background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%); }
-        body.theme-aria { background: linear-gradient(135deg, #ee9ca7 0%, #ffdde1 100%); }
-        body.theme-ethan { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
-        body.theme-atlas { background: linear-gradient(135deg, #4b6cb7 0%, #182848 100%); }
-        body.theme-kai { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
-        body.theme-sage { background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); }
-        body.theme-echo { background: linear-gradient(135deg, #d299c2 0%, #fef9d7 100%); }
-
-        /* Infinity Video Container */
-        .infinity-container {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 10;
-            flex-direction: column;
-        }
-
-        .infinity-container.active {
-            display: flex;
-        }
-
-        .infinity-video {
-            width: clamp(180px, 50vw, 250px);
-            height: clamp(180px, 50vw, 250px);
-            object-fit: cover;
-            border-radius: 50%;
-        }
-
-        /* Progress Bar */
-        .progress-container {
-            position: absolute;
-            bottom: 15%;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 60%;
-            max-width: 400px;
-        }
-
-        .progress-bar-bg {
-            width: 100%;
-            height: 2px;
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 2px;
-            overflow: hidden;
-        }
-
-        .progress-bar-fill {
-            height: 100%;
-            width: 0%;
-            background: white;
-            border-radius: 2px;
-            transition: width 0.3s ease;
-        }
-
-        .progress-text {
-            color: white;
-            font-size: 0.9em;
-            text-align: center;
-            margin-top: 10px;
-            opacity: 0.8;
-            letter-spacing: 1px;
         }
 
         .container {
@@ -125,22 +53,79 @@
             color: #F5F5DC;
             margin-bottom: clamp(20px, 6vh, 40px);
             text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            opacity: 0;
             transition: opacity 0.5s ease;
         }
 
         .subtitle {
             font-size: clamp(0.9em, 3vw, 1.1em);
-            opacity: 0.8;
+            opacity: 0;
             margin-bottom: clamp(30px, 8vh, 60px);
             font-weight: 300;
             letter-spacing: 2px;
+            transition: opacity 0.5s ease;
         }
 
+        /* Infinity Animation Container */
+        .infinity-container {
+            width: clamp(300px, 60vw, 400px);
+            height: clamp(150px, 30vw, 200px);
+            margin: clamp(30px, 8vh, 60px) auto;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+
+        .infinity-container.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .infinity-svg {
+            width: 100%;
+            height: 100%;
+            filter: drop-shadow(0 0 20px rgba(245, 245, 220, 0.6));
+        }
+
+        .infinity-path {
+            animation: pulse-glow 2s ease-in-out infinite;
+            stroke: #F5F5DC;
+            stroke-width: 5;
+        }
+
+        .infinity-dot {
+            filter: drop-shadow(0 0 12px rgba(245, 245, 220, 0.9));
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% {
+                opacity: 0.7;
+                stroke-width: 4;
+            }
+            50% {
+                opacity: 1;
+                stroke-width: 6;
+            }
+        }
+
+        /* Visualizer - hidden during setup, shown after */
         .visualizer {
             width: clamp(180px, 50vw, 250px);
             height: clamp(180px, 50vw, 250px);
             margin: clamp(30px, 8vh, 60px) auto;
             position: relative;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.8s ease;
+        }
+
+        .visualizer.active {
+            opacity: 1;
+            pointer-events: auto;
         }
 
         .pulse {
@@ -167,6 +152,47 @@
         @keyframes listening {
             0%, 100% { transform: scale(1); }
             50% { transform: scale(1.15); }
+        }
+
+        /* Progress Bar */
+        .progress-container {
+            width: 60%;
+            max-width: 400px;
+            margin: 0 auto;
+            margin-top: clamp(30px, 8vh, 60px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+
+        .progress-container.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .progress-bar-bg {
+            width: 100%;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            width: 0%;
+            background: white;
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+
+        .progress-text {
+            color: white;
+            font-size: 0.9em;
+            text-align: center;
+            margin-top: 10px;
+            opacity: 0.8;
+            letter-spacing: 1px;
         }
 
         .controls {
@@ -228,17 +254,26 @@
         @media (orientation: landscape) and (max-height: 600px) {
             .container { padding: 10px; }
             h1 { font-size: clamp(2em, 8vw, 3em); margin-bottom: 20px; }
+            .infinity-container {
+                width: clamp(200px, 40vw, 300px);
+                height: clamp(100px, 20vw, 150px);
+                margin: 20px auto;
+            }
             .visualizer {
                 width: clamp(120px, 30vw, 180px);
                 height: clamp(120px, 30vw, 180px);
                 margin: 20px auto;
             }
             .controls { margin-top: 20px; }
-            .infinity-video { max-height: 60vh; }
+            .progress-container { margin-top: 20px; }
         }
 
         @media (max-width: 375px) {
             h1 { font-size: 2.5em; letter-spacing: 6px; }
+            .infinity-container {
+                width: 260px;
+                height: 130px;
+            }
         }
 
         html {
@@ -248,21 +283,7 @@
         }
     </style>
 </head>
-<body class="theme-samantha">
-    <!-- Infinity Video Overlay -->
-    <div class="infinity-container" id="infinityContainer">
-        <video class="infinity-video" id="infinityVideo" loop muted playsinline>
-            <source src="infinity.mp4" type="video/mp4">
-            <!-- Add your video file as "infinity.mp4" in the same directory -->
-        </video>
-        <div class="progress-container">
-            <div class="progress-bar-bg">
-                <div class="progress-bar-fill" id="progressBar"></div>
-            </div>
-            <div class="progress-text" id="progressText">Initializing OS1...</div>
-        </div>
-    </div>
-
+<body>
     <div class="personalization-hint" onclick="showPersonalization()">
         ⚙️ Personalize
     </div>
@@ -271,10 +292,41 @@
         <h1 id="aiName"></h1>
         <div class="subtitle" id="aiSubtitle"></div>
         
+        <!-- Infinity Animation (shown during setup) -->
+        <div class="infinity-container" id="infinityContainer">
+            <svg class="infinity-svg" viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+                <path class="infinity-path" 
+                      d="M 30,50 C 30,25 45,15 60,15 C 75,15 85,25 100,50 C 115,75 125,85 140,85 C 155,85 170,75 170,50 C 170,25 155,15 140,15 C 125,15 115,25 100,50 C 85,75 75,85 60,85 C 45,85 30,75 30,50 Z" 
+                      fill="none" 
+                      stroke="rgba(245, 245, 220, 0.8)" 
+                      stroke-linecap="round"/>
+                
+                <circle class="infinity-dot" r="5" fill="#F5F5DC">
+                    <animateMotion dur="3s" repeatCount="indefinite">
+                        <mpath href="#infinityPath"/>
+                    </animateMotion>
+                </circle>
+                
+                <path id="infinityPath" 
+                      d="M 30,50 C 30,25 45,15 60,15 C 75,15 85,25 100,50 C 115,75 125,85 140,85 C 155,85 170,75 170,50 C 170,25 155,15 140,15 C 125,15 115,25 100,50 C 85,75 75,85 60,85 C 45,85 30,75 30,50 Z" 
+                      fill="none" 
+                      stroke="none"/>
+            </svg>
+        </div>
+        
+        <!-- Regular visualizer (shown after setup completes) -->
         <div class="visualizer" id="visualizer">
             <div class="pulse"></div>
             <div class="pulse"></div>
             <div class="pulse"></div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-bar-bg">
+                <div class="progress-bar-fill" id="progressBar"></div>
+            </div>
+            <div class="progress-text" id="progressText">Initializing OS1...</div>
         </div>
 
         <div class="controls">
