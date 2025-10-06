@@ -14,6 +14,9 @@ let setupProgress = 0;
 let totalSetupSteps = 4;
 let bootupAudioPlaying = false;
 
+// Toggle this if your /api/tts supports SSML ("<speak>...</speak>")
+const USE_SSML = false;
+
 // User responses for personalization
 let userResponses = {
     social: null,
@@ -36,6 +39,42 @@ const VOICE_PROFILES = {
         personality: 'warm and intimate'
     }
 };
+
+/* --------------------------- TTS TEXT PREPROCESSOR --------------------------- */
+// Convert stage directions like *soft laugh* / [sigh] / (chuckles) into natural audio.
+// If USE_SSML=true, we add <break> tags; otherwise we insert natural interjections.
+function prepareTTS(text, { ssml = false } = {}) {
+  let s = String(text ?? '').replace(/\s+/g, ' ').trim();
+
+  const rules = [
+    // Soft laugh variants → brief heh/pause
+    { re: /\bsoft laugh\b|\blaughs softly\b|(\*|\(|\[)\s*(soft laugh|laughs softly|chuckle|giggle)\s*(\*|\)|\])/gi,
+      replacePlain: ' heh ', replaceSSML: '<break time="200ms"/>heh<break time="100ms"/>' },
+
+    // General laugh
+    { re: /\b(laughs?|haha+)\b|(\*|\(|\[)\s*(laughs?)\s*(\*|\)|\])/gi,
+      replacePlain: ' haha ', replaceSSML: '<break time="150ms"/>haha<break time="100ms"/>' },
+
+    // Sighs → pause
+    { re: /\bsoft sigh\b|\bsighs?\b|(\*|\(|\[)\s*(soft sigh|sighs?)\s*(\*|\)|\])/gi,
+      replacePlain: ' ', replaceSSML: '<break time="350ms"/>' },
+
+    // Breath/clear throat → pause
+    { re: /(\*|\(|\[)\s*(clears throat|deep breath|breathes|exhales|inhales)\s*(\*|\)|\])/gi,
+      replacePlain: ' ', replaceSSML: '<break time="300ms"/>' },
+  ];
+
+  for (const r of rules) {
+    s = s.replace(r.re, ssml ? r.replaceSSML : r.replacePlain);
+  }
+
+  // Remove any leftover bracketed cues
+  s = s.replace(/(\*|\(|\[)[^)\]\*]+(\*|\)|\])/g, ' ').replace(/\s+/g, ' ').trim();
+
+  if (ssml) s = `<speak>${s}</speak>`;
+  return s;
+}
+/* --------------------------------------------------------------------------- */
 
 function initialize() {
     console.log('🎤 Initializing OS1...');
@@ -85,7 +124,6 @@ function initialize() {
 }
 
 function analyzePersonality() {
-    // Check voice preference from user's answer
     const voicePref = userResponses.voicePreference?.toLowerCase() || '';
     
     console.log('🔍 Analyzing voice preference...');
@@ -96,14 +134,10 @@ function analyzePersonality() {
     if (voicePref.includes('female') || voicePref.includes('woman') || voicePref.includes('girl')) {
         console.log('✅ Assigned voice: Samantha (female)');
         return 'samantha';
-    } 
-    // Then check for male
-    else if (voicePref.includes('male') || voicePref.includes('man') || voicePref.includes('boy')) {
+    } else if (voicePref.includes('male') || voicePref.includes('man') || voicePref.includes('boy')) {
         console.log('✅ Assigned voice: Samuel (male)');
         return 'samuel';
-    } 
-    // Default to Samantha
-    else {
+    } else {
         console.log('✅ Assigned voice: Samantha (default)');
         return 'samantha';
     }
@@ -233,7 +267,7 @@ async function continueSetup() {
             console.log('💫 Traits:', profile.personality);
             
             // Wait for bootup sound to finish (adjust time based on your sound length)
-            await sleep(3000); // Change this to match your bootup sound duration
+            await sleep(3000);
             
             setupComplete = true;
             setupStage = 0;
@@ -242,15 +276,12 @@ async function continueSetup() {
             // Hide infinity animation - DON'T change theme color
             hideInfinityVideo();
             
-            // Don't show name on screen
-            
-            await sleep(isMobile ? 500 : 300);
-            
-            // Introduce with the correct name - more intimate introduction
+            // Introduce with the correct name — no literal stage directions
             const greeting = profile.name === 'Samuel' 
                 ? `Hi, I'm Samuel. It's great to meet you. How are you feeling right now?`
-                : `Hey... *soft laugh* I'm Samantha. It's so nice to finally meet you. How are you feeling right now?`;
+                : `Hey... heh. I'm Samantha. It's so nice to finally meet you. How are you feeling right now?`;
             
+            await sleep(isMobile ? 500 : 300);
             await speakWithVoice(
                 greeting, 
                 selectedVoice, 
@@ -364,7 +395,6 @@ async function speakWithVoice(text, voiceType, voiceProfile = null) {
             console.log('📱 Created audio context in speakWithVoice');
         }
         
-        // Critical for iOS - always resume before playing
         if (audioContext.state === 'suspended') {
             await audioContext.resume();
             console.log('📱 Resumed audio context');
@@ -373,13 +403,17 @@ async function speakWithVoice(text, voiceType, voiceProfile = null) {
             }
         }
 
+        // Prepare text for TTS (strip/convert stage directions)
+        const prepared = prepareTTS(text, { ssml: USE_SSML });
+
         const response = await fetch('/api/tts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-                text, 
+                text: prepared, 
                 voiceType,
-                voiceProfile: voiceProfile || selectedVoiceProfile
+                voiceProfile: voiceProfile || selectedVoiceProfile,
+                inputType: USE_SSML ? 'ssml' : 'text'
             })
         });
 
@@ -455,7 +489,6 @@ async function speakWithVoice(text, voiceType, voiceProfile = null) {
 
 // Remove the personalization function since users can't change
 window.openPersonalization = function() {
-    // Disabled - users get assigned their voice
     console.log('Voice personalization is automatic based on setup responses');
 };
 
