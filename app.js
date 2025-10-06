@@ -69,25 +69,72 @@ async function mobileUnlockAudio() {
   } catch (e) { console.log('Silent play failed:', e); }
 }
 
+// Call this once in initialize()
+function bindGlobalUnlock() {
+  const unlockOnce = async () => { try { await mobileUnlockAudio(); } catch(_) {} };
+  ['pointerdown', 'touchstart', 'mousedown'].forEach(evt =>
+    document.addEventListener(evt, unlockOnce, { once: true, passive: true })
+  );
+}
+
 // Preload and decode boot sound to WebAudio buffer (use #bootupSound src)
 async function preloadBootupBuffer() {
   try {
     if (bootupBuffer) return bootupBuffer;
     const el = document.getElementById('bootupSound');
-    if (!el || !el.src) { console.log('ℹ️ No bootupSound src'); return null; }
-    const res = await fetch(el.src, { cache: 'force-cache' });
+    if (!el) { console.log('ℹ️ No #bootupSound element'); return null; }
+    const url = el.currentSrc || el.src;
+    if (!url) { console.log('ℹ️ bootupSound has no src/currentSrc'); return null; }
+
+    const res = await fetch(url, { mode: 'cors', cache: 'reload' });
+    if (!res.ok) throw new Error(`fetch failed ${res.status}`);
     const arrayBuf = await res.arrayBuffer();
     const ctx = ensureAudioContext();
-    const copy = arrayBuf.slice(0);
+    const copy = arrayBuf.slice(0); // iOS quirk
     bootupBuffer = await ctx.decodeAudioData(copy);
-    console.log('✅ Bootup audio decoded. Duration:', bootupBuffer.duration.toFixed(2), 's');
+    console.log('✅ Boot buffer decoded. ~', bootupBuffer.duration.toFixed(2), 's');
     return bootupBuffer;
   } catch (e) {
-    console.log('⚠️ Failed to preload bootup buffer:', e);
+    console.log('⚠️ preloadBootupBuffer error (CORS/format?):', e);
+    bootupBuffer = null;
     return null;
   }
 }
 
+// Fallback 1: play the <audio> element for a fixed duration
+async function tryPlayBootElementFor(ms) {
+  const el = document.getElementById('bootupSound');
+  if (!el) { console.log('ℹ️ no boot element'); return false; }
+
+  // Force mobile-friendly flags every time (some browsers reset)
+  el.setAttribute('playsinline', '');
+  el.setAttribute('webkit-playsinline', '');
+  el.crossOrigin = 'anonymous';
+  el.preload = 'auto';
+  el.muted = false;
+  el.volume = 1.0;
+
+  if (el.readyState < 1) { try { el.load(); } catch(_) {} }
+
+  console.log('🎛️ boot audio readyState:', el.readyState, 'src:', el.currentSrc || el.src);
+
+  try {
+    el.currentTime = 0;
+    const playPromise = el.play();
+    if (playPromise && typeof playPromise.then === 'function') {
+      await playPromise;
+    }
+    await new Promise(r => setTimeout(r, ms));
+    try { el.pause(); el.currentTime = 0; } catch(_) {}
+    console.log('🎵 Played boot element for', ms, 'ms');
+    return true;
+  } catch (e) {
+    console.log('⚠️ HTMLMedia play failed:', e);
+    return false;
+  }
+}
+
+// Fallback 2: WebAudio buffer for duration
 function playBufferFor(ms, buffer) {
   return new Promise(async (resolve) => {
     const ctx = ensureAudioContext();
@@ -114,6 +161,30 @@ function playBufferFor(ms, buffer) {
   });
 }
 
+// Fallback 3: oscillator beep + wait remainder
+async function oscillatorBeep(ms = 900) {
+  try {
+    const ctx = ensureAudioContext();
+    if (ctx.state === 'suspended') { try { await ctx.resume(); } catch(_) {} }
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.value = 440;
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + ms / 1000);
+    o.connect(g).connect(ctx.destination);
+    o.start();
+    o.stop(ctx.currentTime + ms / 1000);
+    await new Promise(r => setTimeout(r, ms));
+    console.log('🔊 Oscillator beep fallback played');
+    return true;
+  } catch (e) {
+    console.log('⚠️ Oscillator fallback failed:', e);
+    return false;
+  }
+}
+
 // Keep AudioContext alive when tab visibility changes (iOS auto-suspends)
 document.addEventListener('visibilitychange', async () => {
   if (!audioContext) return;
@@ -121,15 +192,9 @@ document.addEventListener('visibilitychange', async () => {
     try { await audioContext.resume(); console.log('▶️ Resumed AudioContext on visibility'); } catch(e){}
   }
 });
-
-// First user gesture unlock (covers safari)
-['touchstart', 'mousedown'].forEach(evt =>
-  document.addEventListener(evt, () => { if (!unlockedOnce) mobileUnlockAudio(); }, { once: true, passive: true })
-);
 /* ========================================================================== */
 
 /* ===================== VOICE PREFERENCE DETECTOR (ROBUST) ================== */
-// Replaces your old analyzePersonality()
 function analyzePersonality() {
   const raw = (userResponses.voicePreference || '').toLowerCase().trim();
   if (!raw) return 'samantha';
@@ -202,23 +267,40 @@ function initialize() {
     return;
   }
 
+  // Enable Start button and bind unlock on first press
   setTimeout(() => {
     const btn = document.getElementById('talkBtn');
-    btn.disabled = false;
-    btn.textContent = 'Start OS1';
-    // Also unlock on the very first click of Start OS1
-    btn.addEventListener('click', () => mobileUnlockAudio(), { once: true });
+    if (btn) {
+      const btnUnlock = async () => { try { await mobileUnlockAudio(); } catch(_) {} };
+      btn.addEventListener('pointerdown', btnUnlock, { once: true });
+      btn.addEventListener('touchstart', btnUnlock, { once: true, passive: true });
+      btn.disabled = false;
+      btn.textContent = 'Start OS1';
+    }
   }, 500);
+
+  bindGlobalUnlock(); // global first-gesture unlock
 }
 
 async function startSetup() {
   if (setupStarted) return;
   setupStarted = true;
 
-  // Ensure mobile audio is unlocked right now
   await mobileUnlockAudio();
 
-  // Preload boot audio early (after unlock)
+  // Pre-warm the <audio> element
+  const bootEl = document.getElementById('bootupSound');
+  if (bootEl) {
+    bootEl.setAttribute('playsinline', '');
+    bootEl.setAttribute('webkit-playsinline', '');
+    bootEl.crossOrigin = 'anonymous';
+    bootEl.preload = 'auto';
+    bootEl.muted = false;
+    bootEl.volume = 1.0;
+    try { bootEl.load(); } catch(_) {}
+  }
+
+  // Try to also preload WebAudio buffer (harmless if it fails)
   await preloadBootupBuffer();
 
   showInfinityVideo();
@@ -291,7 +373,7 @@ async function continueSetup() {
 
       console.log('✅ Setup complete! Assigned:', profile.name);
 
-      // Strict 13s boot: speed infinity + play WebAudio boot buffer for 13s
+      // Strict 13s boot: speed infinity + play boot audio with robust fallbacks
       await bootPhaseStrict13s();
 
       setupComplete = true;
@@ -428,7 +510,7 @@ async function speakWithVoice(text, voiceType, voiceProfile = null) {
   }
 }
 
-/* ===================== Strict 13s boot phase (WebAudio) ===================== */
+/* ===================== Strict 13s boot phase (robust) ====================== */
 function speedInfinity(isFast) {
   const container = document.getElementById('infinityContainer');
   const video = document.getElementById('infinityVideo'); // optional <video>
@@ -440,10 +522,36 @@ function speedInfinity(isFast) {
 async function bootPhaseStrict13s() {
   const DURATION_MS = 13000;
   speedInfinity(true);
-  if (!bootupBuffer) { await preloadBootupBuffer(); }
-  await playBufferFor(DURATION_MS, bootupBuffer);
+
+  let ok = false;
+  let path = 'htmlmedia';
+
+  // 1) HTMLMedia (best chance on mobile right after a gesture)
+  ok = await tryPlayBootElementFor(DURATION_MS);
+
+  // 2) WebAudio buffer if HTMLMedia failed
+  if (!ok) {
+    path = 'webaudio';
+    try {
+      if (!bootupBuffer) await preloadBootupBuffer();
+      if (bootupBuffer) {
+        await playBufferFor(DURATION_MS, bootupBuffer);
+        ok = true;
+      }
+    } catch (e) {
+      console.log('⚠️ WebAudio boot failed:', e);
+    }
+  }
+
+  // 3) Oscillator fallback (short cue + wait rest)
+  if (!ok) {
+    path = 'oscillator';
+    await oscillatorBeep(900);
+    await new Promise(r => setTimeout(r, DURATION_MS - 900));
+  }
+
   speedInfinity(false);
-  console.log('⏱️ Boot phase complete after 13s');
+  console.log(`⏱️ Boot phase complete after 13s via ${path}`);
 }
 /* ========================================================================== */
 
