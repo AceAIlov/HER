@@ -246,10 +246,10 @@ async function continueSetup() {
             
             await sleep(isMobile ? 500 : 300);
             
-            // Introduce with the correct name
+            // Introduce with the correct name - more intimate introduction
             const greeting = profile.name === 'Samuel' 
                 ? `Hi, I'm Samuel. It's great to meet you. How are you feeling right now?`
-                : `Hi, I'm Samantha. It's so nice to meet you. How are you feeling right now?`;
+                : `Hey... *soft laugh* I'm Samantha. It's so nice to finally meet you. How are you feeling right now?`;
             
             await speakWithVoice(
                 greeting, 
