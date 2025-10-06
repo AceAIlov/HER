@@ -89,17 +89,13 @@
             height: clamp(120px, 27vw, 190px);
             margin: clamp(20px, 4vh, 50px) auto;
             position: relative;
-            display: flex;
+            display: none;
             align-items: center;
             justify-content: center;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.5s ease;
         }
 
         .infinity-container.active {
-            opacity: 1;
-            pointer-events: auto;
+            display: flex !important;
         }
 
         .infinity-svg {
@@ -129,20 +125,24 @@
             }
         }
 
+        /* Speed up infinity during bootup */
+        .infinity-container.bootup .infinity-path {
+            animation: pulse-glow 1s ease-in-out infinite;
+        }
+
         /* Visualizer - hidden during setup, shown after */
         .visualizer {
             width: clamp(150px, 45vw, 240px);
             height: clamp(150px, 45vw, 240px);
             margin: clamp(20px, 4vh, 50px) auto;
             position: relative;
-            opacity: 0;
-            pointer-events: none;
+            display: none;
             transition: opacity 0.8s ease;
         }
 
         .visualizer.active {
+            display: block;
             opacity: 1;
-            pointer-events: auto;
         }
 
         .pulse {
@@ -177,14 +177,13 @@
             max-width: 400px;
             margin: 0 auto;
             margin-top: clamp(20px, 4vh, 50px);
-            opacity: 0;
-            pointer-events: none;
+            display: none;
             transition: opacity 0.5s ease;
         }
 
         .progress-container.active {
+            display: block;
             opacity: 1;
-            pointer-events: auto;
         }
 
         .progress-bar-bg {
@@ -430,10 +429,16 @@
     </script>
     <script src="app.js"></script>
     
-    <!-- Bootup sound -->
+    <!-- Bootup sound - plays during setup -->
     <audio id="bootupSound" preload="auto">
         <source src="bootup.mp3" type="audio/mpeg">
         <source src="bootup.wav" type="audio/wav">
+    </audio>
+    
+    <!-- Pre-speech notification sound -->
+    <audio id="notificationSound" preload="auto">
+        <source src="notification.mp3" type="audio/mpeg">
+        <source src="notification.wav" type="audio/wav">
     </audio>
 </body>
 </html>
