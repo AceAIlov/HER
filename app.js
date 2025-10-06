@@ -253,28 +253,23 @@ async function continueSetup() {
       console.log('🎭 Assigned personality:', profile.name);
       console.log('💫 Traits:', profile.personality);
 
-      // Play bootup sound and SPEED UP infinity animation WHILE it plays.
-      // Wait for audio 'ended' OR fallback ~14s.
-      await playBootupSound({ maxMs: 14000 });
+      // Strict boot phase: speed infinity + play audio + wait EXACTLY 13s
+      await bootPhaseStrict13s();
 
       setupComplete = true;
       setupStage = 0;
       conversationHistory = [];
 
-      // Hide infinity animation - DON'T change theme color
+      // Sphere appears AFTER 13s boot phase finishes
       hideInfinityVideo();
 
-      // After bootup: Samantha says "Hi." first, then the full greeting.
+      // After bootup: Samantha says ONLY “Hi, I'm Samantha.”
       if (profile.name === 'Samantha') {
-        await speakWithVoice('Hi.', selectedVoice, selectedVoiceProfile);
+        await speakWithVoice("Hi, I'm Samantha.", selectedVoice, selectedVoiceProfile);
+      } else if (profile.name === 'Samuel') {
+        // keep Samuel minimal too (optional)
+        await speakWithVoice("Hi, I'm Samuel.", selectedVoice, selectedVoiceProfile);
       }
-
-      const greeting = profile.name === 'Samuel'
-        ? `Hi, I'm Samuel. It's great to meet you. How are you feeling right now?`
-        : `I'm Samantha. It's so nice to finally meet you. How are you feeling right now?`;
-
-      await sleep(isMobile ? 300 : 200);
-      await speakWithVoice(greeting, selectedVoice, selectedVoiceProfile);
     }
   } catch (error) {
     console.error('❌ Continue setup failed:', error);
@@ -469,77 +464,52 @@ async function speakWithVoice(text, voiceType, voiceProfile = null) {
   }
 }
 
-// ====== NEW: speed up infinity animation while boot audio plays ======
+/* ===================== Strict 13s boot phase helpers ====================== */
+// Speed up infinity animation while boot audio plays
 function speedInfinity(isFast) {
   const container = document.getElementById('infinityContainer');
-  const video = document.getElementById('infinityVideo'); // if you use a <video> for the loop
+  const video = document.getElementById('infinityVideo'); // optional <video>
   if (container) container.classList.toggle('fast', isFast);
   if (video && typeof video.playbackRate === 'number') {
     video.playbackRate = isFast ? 1.6 : 1.0;
   }
-  // If your CSS uses a var for animation speed, we also set it:
   document.documentElement.style.setProperty('--infinity-speed', isFast ? '0.4s' : '1s');
 }
 
-// ====== UPDATED: Bootup sound control now returns a Promise ======
-function playBootupSound({ maxMs = 14000 } = {}) {
+// Play the bootup audio (if present), but ALWAYS run for exactly 13s.
+// Even if the audio ends early, we wait out the timer so Samantha won't speak early.
+async function bootPhaseStrict13s() {
   const el = document.getElementById('bootupSound');
-  return new Promise((resolve) => {
-    if (!el) {
-      console.log('ℹ️ No bootupSound element found; skipping.');
-      speedInfinity(false);
-      return resolve();
-    }
+  const DURATION_MS = 13000;
 
-    // Prepare
-    bootupAudioPlaying = true;
-    el.loop = false;
-    el.currentTime = 0;
+  speedInfinity(true);
 
-    // While audio plays, speed up infinity animation
-    speedInfinity(true);
+  const playPromise = (el && typeof el.play === 'function')
+    ? el.play().then(() => { bootupAudioPlaying = true; }).catch(err => {
+        console.log('Bootup sound blocked/failed:', err);
+        bootupAudioPlaying = false;
+      })
+    : Promise.resolve();
 
-    const cleanup = () => {
-      if (!bootupAudioPlaying) return;
-      bootupAudioPlaying = false;
-      speedInfinity(false);
-      el.removeEventListener('ended', onEnded);
-      clearTimeout(fallbackTimer);
-      console.log('🔇 Bootup sound finished/timeout — restoring animation speed');
-      resolve();
-    };
+  // Run a strict 13s timer
+  await Promise.all([
+    playPromise,
+    new Promise(resolve => setTimeout(resolve, DURATION_MS))
+  ]);
 
-    const onEnded = () => {
-      console.log('🎵 Bootup audio ended event');
-      cleanup();
-    };
-
-    const fallbackTimer = setTimeout(() => {
-      console.log(`⏱️ Bootup audio fallback after ~${maxMs}ms`);
-      cleanup();
-    }, maxMs + 500);
-
-    el.addEventListener('ended', onEnded, { once: true });
-
-    el.play()
-      .then(() => console.log('🔊 Playing bootup sound'))
-      .catch((e) => {
-        console.log('Bootup sound blocked or failed:', e);
-        cleanup();
-      });
-  });
-}
-
-function stopBootupSound() {
-  const bootupAudio = document.getElementById('bootupSound');
-  if (bootupAudio && bootupAudioPlaying) {
-    bootupAudio.pause();
-    bootupAudio.currentTime = 0;
+  // Stop/cleanup audio if still playing
+  if (el && bootupAudioPlaying) {
+    try {
+      el.pause();
+      el.currentTime = 0;
+    } catch (e) {}
     bootupAudioPlaying = false;
-    speedInfinity(false);
-    console.log('🔇 Stopped bootup sound');
   }
+
+  speedInfinity(false);
+  console.log('⏱️ Boot phase complete after 13s');
 }
+/* ========================================================================= */
 
 // Notification sound before AI speaks
 function playNotificationSound() {
@@ -556,10 +526,10 @@ function showInfinityVideo() {
   const visualizer = document.getElementById('visualizer');
   const progressContainer = document.getElementById('progressContainer');
 
-  // Hide the pulse visualizer
+  // Hide the pulse visualizer (sphere) during boot
   visualizer.classList.remove('active');
 
-  // Show infinity animation and progress bar with bootup speed
+  // Show infinity animation and progress bar
   infinityContainer.classList.add('active');
   infinityContainer.classList.add('bootup');
   progressContainer.classList.add('active');
@@ -578,12 +548,12 @@ function hideInfinityVideo() {
   infinityContainer.classList.remove('fast'); // ensure fast mode cleared
   progressContainer.classList.remove('active');
 
-  // Show the pulse visualizer - smooth transition
+  // Show the pulse visualizer (sphere) AFTER boot phase — smooth transition
   setTimeout(() => {
     visualizer.classList.add('active');
   }, 300);
 
-  console.log('∞ Infinity animation hidden, circle visualizer shown');
+  console.log('∞ Infinity animation hidden, sphere shown');
 }
 
 function enableListening() {
