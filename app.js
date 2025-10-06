@@ -88,12 +88,23 @@ function analyzePersonality() {
     // Check voice preference from user's answer
     const voicePref = userResponses.voicePreference?.toLowerCase() || '';
     
-    if (voicePref.includes('male') || voicePref.includes('man') || voicePref.includes('boy')) {
+    console.log('🔍 Analyzing voice preference...');
+    console.log('   Raw response:', userResponses.voicePreference);
+    console.log('   Lowercase:', voicePref);
+    
+    // Check for female FIRST (because "female" contains "male")
+    if (voicePref.includes('female') || voicePref.includes('woman') || voicePref.includes('girl')) {
+        console.log('✅ Assigned voice: Samantha (female)');
+        return 'samantha';
+    } 
+    // Then check for male
+    else if (voicePref.includes('male') || voicePref.includes('man') || voicePref.includes('boy')) {
         console.log('✅ Assigned voice: Samuel (male)');
         return 'samuel';
-    } else {
-        // Default to Samantha for female or any other response
-        console.log('✅ Assigned voice: Samantha (female)');
+    } 
+    // Default to Samantha
+    else {
+        console.log('✅ Assigned voice: Samantha (default)');
         return 'samantha';
     }
 }
@@ -258,10 +269,13 @@ function handleSetupResponse(response) {
     // Store responses for personality analysis
     if (setupStage === 1) {
         userResponses.social = response;
+        console.log('💾 Stored social response:', userResponses.social);
     } else if (setupStage === 2) {
         userResponses.mother = response;
+        console.log('💾 Stored mother response:', userResponses.mother);
     } else if (setupStage === 3) {
         userResponses.voicePreference = response;
+        console.log('💾 Stored voice preference:', userResponses.voicePreference);
     }
     
     document.getElementById('talkBtn').disabled = true;
