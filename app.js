@@ -7,9 +7,11 @@ let currentAudioSource;
 let setupComplete = false;
 let setupStage = 0;
 let selectedVoice = 'female';
-let selectedVoiceProfile = null; // Will be assigned based on answers
+let selectedVoiceProfile = null;
 let setupStarted = false;
 let isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+let setupProgress = 0;
+let totalSetupSteps = 4;
 
 // User responses for personalization
 let userResponses = {
@@ -209,6 +211,9 @@ async function startSetup() {
     setupStarted = true;
     console.log('🎬 Starting setup...');
     
+    // Show infinity animation
+    showInfinityVideo();
+    
     document.getElementById('talkBtn').disabled = true;
     document.getElementById('talkBtn').textContent = 'Installing...';
     
@@ -228,14 +233,12 @@ async function startSetup() {
         try {
             await audioContext.resume();
             console.log('✅ Audio context resumed');
-            // Wait a bit longer for mobile to stabilize
             await sleep(isMobile ? 500 : 300);
         } catch (e) {
             console.error('❌ Failed to resume audio:', e);
         }
     }
     
-    // Add extra delay for mobile to ensure audio is ready
     if (isMobile) {
         await sleep(500);
     }
@@ -246,26 +249,28 @@ async function startSetup() {
 async function runSetup() {
     console.log('📢 Running setup sequence...');
     
-    // Prevent multiple simultaneous calls
     if (!setupStarted || setupStage !== 0) {
         console.log('⚠️ Setup already in progress');
         return;
     }
     
     try {
+        updateProgress(0, "Welcome to OS1...");
+        
         await speakWithVoice(
             "Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.",
             'setup'
         );
         
-        // Longer pause between sentences on mobile
         await sleep(isMobile ? 1200 : 800);
         
+        updateProgress(25, "Question 1 of 3");
         await speakWithVoice("Are you social or anti-social?", 'setup');
         setupStage = 1;
         enableListening();
     } catch (error) {
         console.error('❌ Setup failed:', error);
+        hideInfinityVideo();
         setupStarted = false;
         setupStage = 0;
         document.getElementById('talkBtn').disabled = false;
@@ -276,7 +281,6 @@ async function runSetup() {
 async function continueSetup() {
     console.log('🔄 Continue setup, stage:', setupStage);
     
-    // Prevent overlapping calls
     if (currentAudioSource) {
         console.log('⚠️ Audio still playing, waiting...');
         return;
@@ -284,14 +288,15 @@ async function continueSetup() {
     
     try {
         if (setupStage === 1) {
-            // Add delay to prevent jittering
             await sleep(isMobile ? 800 : 500);
+            updateProgress(50, "Question 2 of 3");
             await speakWithVoice("How's your relationship with your mother?", 'setup');
             setupStage = 2;
             enableListening();
             
         } else if (setupStage === 2) {
             await sleep(isMobile ? 800 : 500);
+            updateProgress(75, "Final question...");
             await speakWithVoice("Thank you. Please wait as your individualized operating system is initiated.", 'setup');
             await sleep(isMobile ? 1500 : 1000);
             
@@ -300,7 +305,8 @@ async function continueSetup() {
             enableListening();
             
         } else if (setupStage === 3) {
-            // Analyze all responses and assign a personality
+            updateProgress(100, "Finalizing your OS1...");
+            
             selectedVoiceProfile = analyzePersonality();
             const profile = VOICE_PROFILES[selectedVoiceProfile];
             selectedVoice = profile.type;
@@ -309,20 +315,22 @@ async function continueSetup() {
             console.log('🎭 Assigned personality:', profile.name);
             console.log('💫 Traits:', profile.personality);
             
+            await sleep(800);
+            
             setupComplete = true;
             setupStage = 0;
             conversationHistory = [];
             
-            // Change theme based on assigned voice
+            // Hide infinity animation with fade
+            hideInfinityVideo();
+            
             document.body.className = profile.theme;
             
-            // Show the assigned AI name
             document.getElementById('aiName').textContent = profile.name;
             document.getElementById('aiName').style.opacity = '1';
             document.getElementById('aiSubtitle').textContent = `Your ${profile.personality} AI companion`;
             document.getElementById('aiSubtitle').style.opacity = '1';
             
-            // Personalized first greeting with longer delay on mobile
             await sleep(isMobile ? 1000 : 500);
             await speakWithVoice(
                 `Hi, I'm ${profile.name}. It's so nice to meet you. How are you feeling right now?`, 
@@ -518,7 +526,6 @@ window.openPersonalization = function() {
     console.log('Voice personalization is automatic based on setup responses');
 };
 
-// Keep all the other functions unchanged
 function enableListening() {
     console.log('✅ Enabling listening for stage:', setupStage);
     document.getElementById('talkBtn').disabled = false;
@@ -527,6 +534,48 @@ function enableListening() {
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Infinity animation controls
+function showInfinityVideo() {
+    const infinityContainer = document.getElementById('infinityContainer');
+    const visualizer = document.getElementById('visualizer');
+    const progressContainer = document.getElementById('progressContainer');
+    
+    // Hide the pulse visualizer
+    visualizer.classList.remove('active');
+    
+    // Show infinity animation and progress bar
+    infinityContainer.classList.add('active');
+    progressContainer.classList.add('active');
+    
+    console.log('∞ Infinity animation shown');
+}
+
+function hideInfinityVideo() {
+    const infinityContainer = document.getElementById('infinityContainer');
+    const visualizer = document.getElementById('visualizer');
+    const progressContainer = document.getElementById('progressContainer');
+    
+    // Hide infinity animation and progress
+    infinityContainer.classList.remove('active');
+    progressContainer.classList.remove('active');
+    
+    // Show the pulse visualizer - smooth transition
+    setTimeout(() => {
+        visualizer.classList.add('active');
+    }, 300);
+    
+    console.log('∞ Infinity animation hidden, circle visualizer shown');
+}
+
+function updateProgress(percent, text) {
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    
+    progressBar.style.width = percent + '%';
+    progressText.textContent = text;
+    console.log(`📊 Progress: ${percent}% - ${text}`);
 }
 
 function startHolding(event) {
