@@ -22,7 +22,7 @@ const VOICE_MAPPINGS = {
         }
     },
     samuel: {
-        id: 'pNInz6obpgDQGcFmaJgB', // Adam - male voice
+        id: 'GCH5LqLr0x1cLZVr5T10 ', // Adam - male voice
         settings: {
             stability: 0.50,
             similarity_boost: 0.40,
@@ -208,7 +208,7 @@ app.listen(PORT, () => {
     console.log(`   Voice ID: JSWO6cw2AyFE324d5kEr`);
     console.log(`   Stability: 0.40 | Similarity: 0.30 | Style: 0.75`);
     console.log('👨 SAMUEL (Male):');
-    console.log(`   Voice ID: pNInz6obpgDQGcFmaJgB`);
+    console.log(`   Voice ID: GCH5LqLr0x1cLZVr5T10 `);
     console.log(`   Stability: 0.50 | Similarity: 0.40 | Style: 0.65`);
     console.log('='.repeat(50));
 });
