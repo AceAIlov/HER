@@ -13,666 +13,718 @@ let isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 let setupProgress = 0;
 let totalSetupSteps = 4;
 let bootupAudioPlaying = false;
-
-// Toggle if your /api/tts supports SSML
-const USE_SSML = false;
-
-// Boot audio decoded for WebAudio
-let bootupBuffer = null;
-let unlockedOnce = false;
+let isProcessing = false; // Prevent multiple simultaneous operations
 
 // User responses for personalization
-let userResponses = { social: null, mother: null, voicePreference: null };
-
-const VOICE_PROFILES = {
-  samantha: { name: 'Samantha', type: 'female', theme: 'theme-samantha', personality: 'warm and intimate' },
-  samuel:   { name: 'Samuel',   type: 'male',   theme: 'theme-samuel',   personality: 'warm and intimate' }
+let userResponses = {
+    social: null,
+    mother: null,
+    voicePreference: null
 };
 
-/* ---------------- TTS TEXT PREPROCESSOR (removes all word-actions) ---------- */
-function prepareTTS(text, { ssml = false, keepPauses = false } = {}) {
-  const PAUSE = ssml ? '<break time="180ms"/>' : ' ';
-  const REPL = keepPauses ? PAUSE : '';
-  let s = String(text ?? '').replace(/\s+/g, ' ').trim();
-  s = s.replace(/(\*|\(|\[)[^)\]\*]+(\*|\)|\])/g, REPL);
-  const actionVerbs =
-    /\b(soft\s+)?(laugh(?:s|ing)?|chuckle(?:s|ing)?|giggle(?:s|ing)?|sigh(?:s|ing)?|cough(?:s|ing)?|gasp(?:s|ing)?|whisper(?:s|ing)?|murmur(?:s|ing)?|clears\s+throat|inhale(?:s|ing)?|exhale(?:s|ing)?)\b/gi;
-  s = s.replace(actionVerbs, REPL);
-  const interjections = /\b(ha(?:ha)+|hehe+|lol|lmao|rofl)\b/gi;
-  s = s.replace(interjections, REPL);
-  s = s.replace(/\s+/g, ' ').replace(/\s+([.,!?;:])/g, '$1').trim();
-  if (ssml) s = `<speak>${s}</speak>`;
-  return s;
-}
-/* --------------------------------------------------------------------------- */
-
-/* ===================== MOBILE AUDIO UNLOCK & HELPERS ======================= */
-function ensureAudioContext() {
-  if (!audioContext) {
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    console.log('🎧 AudioContext created. sampleRate:', audioContext.sampleRate);
-  }
-  return audioContext;
-}
-
-async function mobileUnlockAudio() {
-  const ctx = ensureAudioContext();
-  if (ctx.state === 'suspended') { try { await ctx.resume(); } catch(e) { console.log('resume failed', e); } }
-  try {
-    const silent = ctx.createBuffer(1, 1, ctx.sampleRate);
-    const src = ctx.createBufferSource();
-    src.buffer = silent;
-    src.connect(ctx.destination);
-    src.start(0);
-    unlockedOnce = true;
-    console.log('🔓 Mobile audio unlocked');
-  } catch (e) { console.log('Silent play failed:', e); }
-}
-
-// Call this once in initialize()
-function bindGlobalUnlock() {
-  const unlockOnce = async () => { try { await mobileUnlockAudio(); } catch(_) {} };
-  ['pointerdown', 'touchstart', 'mousedown'].forEach(evt =>
-    document.addEventListener(evt, unlockOnce, { once: true, passive: true })
-  );
-}
-
-// Preload and decode boot sound to WebAudio buffer (use #bootupSound src)
-async function preloadBootupBuffer() {
-  try {
-    if (bootupBuffer) return bootupBuffer;
-    const el = document.getElementById('bootupSound');
-    if (!el) { console.log('ℹ️ No #bootupSound element'); return null; }
-    const url = el.currentSrc || el.src;
-    if (!url) { console.log('ℹ️ bootupSound has no src/currentSrc'); return null; }
-
-    const res = await fetch(url, { mode: 'cors', cache: 'reload' });
-    if (!res.ok) throw new Error(`fetch failed ${res.status}`);
-    const arrayBuf = await res.arrayBuffer();
-    const ctx = ensureAudioContext();
-    const copy = arrayBuf.slice(0); // iOS quirk
-    bootupBuffer = await ctx.decodeAudioData(copy);
-    console.log('✅ Boot buffer decoded. ~', bootupBuffer.duration.toFixed(2), 's');
-    return bootupBuffer;
-  } catch (e) {
-    console.log('⚠️ preloadBootupBuffer error (CORS/format?):', e);
-    bootupBuffer = null;
-    return null;
-  }
-}
-
-// Fallback 1: play the <audio> element for a fixed duration
-async function tryPlayBootElementFor(ms) {
-  const el = document.getElementById('bootupSound');
-  if (!el) { console.log('ℹ️ no boot element'); return false; }
-
-  // Force mobile-friendly flags every time (some browsers reset)
-  el.setAttribute('playsinline', '');
-  el.setAttribute('webkit-playsinline', '');
-  el.crossOrigin = 'anonymous';
-  el.preload = 'auto';
-  el.muted = false;
-  el.volume = 1.0;
-
-  if (el.readyState < 1) { try { el.load(); } catch(_) {} }
-
-  console.log('🎛️ boot audio readyState:', el.readyState, 'src:', el.currentSrc || el.src);
-
-  try {
-    el.currentTime = 0;
-    const playPromise = el.play();
-    if (playPromise && typeof playPromise.then === 'function') {
-      await playPromise;
+// Available voice profiles
+const VOICE_PROFILES = {
+    samantha: { 
+        name: 'Samantha', 
+        type: 'female', 
+        theme: 'theme-samantha',
+        personality: 'warm and intimate'
+    },
+    samuel: { 
+        name: 'Samuel', 
+        type: 'male', 
+        theme: 'theme-samuel',
+        personality: 'warm and intimate'
     }
-    await new Promise(r => setTimeout(r, ms));
-    try { el.pause(); el.currentTime = 0; } catch(_) {}
-    console.log('🎵 Played boot element for', ms, 'ms');
-    return true;
-  } catch (e) {
-    console.log('⚠️ HTMLMedia play failed:', e);
-    return false;
-  }
-}
-
-// Fallback 2: WebAudio buffer for duration
-function playBufferFor(ms, buffer) {
-  return new Promise(async (resolve) => {
-    const ctx = ensureAudioContext();
-    if (ctx.state === 'suspended') { try { await ctx.resume(); } catch(e){} }
-    if (!buffer) { console.log('No buffer; waiting fallback', ms, 'ms'); setTimeout(resolve, ms); return; }
-    const src = ctx.createBufferSource();
-    src.buffer = buffer;
-    const gain = ctx.createGain();
-    gain.gain.value = 1.0;
-    src.connect(gain).connect(ctx.destination);
-    bootupAudioPlaying = true;
-
-    const done = () => {
-      if (!bootupAudioPlaying) return;
-      bootupAudioPlaying = false;
-      try { src.stop(); } catch(_) {}
-      try { src.disconnect(); gain.disconnect(); } catch(_) {}
-      resolve();
-    };
-
-    src.start(0);
-    const timer = setTimeout(done, ms);
-    src.onended = () => { clearTimeout(timer); done(); };
-  });
-}
-
-// Fallback 3: oscillator beep + wait remainder
-async function oscillatorBeep(ms = 900) {
-  try {
-    const ctx = ensureAudioContext();
-    if (ctx.state === 'suspended') { try { await ctx.resume(); } catch(_) {} }
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = 'sine';
-    o.frequency.value = 440;
-    g.gain.setValueAtTime(0.0001, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + ms / 1000);
-    o.connect(g).connect(ctx.destination);
-    o.start();
-    o.stop(ctx.currentTime + ms / 1000);
-    await new Promise(r => setTimeout(r, ms));
-    console.log('🔊 Oscillator beep fallback played');
-    return true;
-  } catch (e) {
-    console.log('⚠️ Oscillator fallback failed:', e);
-    return false;
-  }
-}
-
-// Keep AudioContext alive when tab visibility changes (iOS auto-suspends)
-document.addEventListener('visibilitychange', async () => {
-  if (!audioContext) return;
-  if (document.visibilityState === 'visible' && audioContext.state === 'suspended') {
-    try { await audioContext.resume(); console.log('▶️ Resumed AudioContext on visibility'); } catch(e){}
-  }
-});
-/* ========================================================================== */
-
-/* ===================== VOICE PREFERENCE DETECTOR (ROBUST) ================== */
-function analyzePersonality() {
-  const raw = (userResponses.voicePreference || '').toLowerCase().trim();
-  if (!raw) return 'samantha';
-
-  const text = raw.replace(/[“”"']/g, '"').replace(/\s+/g, ' ').trim();
-  const ctxHasVoice = /\bvoice|sound|speaker|tone\b/.test(text);
-  let fixed = text;
-  if (ctxHasVoice) fixed = fixed.replace(/\bmail\b/g, 'male'); // ASR fix
-
-  const negates = (w) => new RegExp(`\\b(?:not|no|don't want|do not want|anything but|not a)\\s+${w}\\b`).test(fixed);
-
-  const maleTerms   = /\b(male|man|guy|boy|masculine|deep(?:er)?\s+voice|lower\s+voice)\b/;
-  const femaleTerms = /\b(female|woman|girl|lady|feminine|higher\s+voice|softer\s+voice)\b/;
-
-  const hasMale = maleTerms.test(fixed);
-  const hasFemale = femaleTerms.test(fixed);
-
-  if ((hasMale && !negates('male') && !hasFemale) || (hasMale && negates('female'))) return 'samuel';
-  if ((hasFemale && !negates('female') && !hasMale) || (hasFemale && negates('male'))) return 'samantha';
-
-  if (hasMale && hasFemale) {
-    const idxM = fixed.search(maleTerms);
-    const idxF = fixed.search(femaleTerms);
-    return idxM >= 0 && idxM < idxF ? 'samuel' : 'samantha';
-  }
-
-  if (hasMale && !negates('male')) return 'samuel';
-  if (hasFemale && !negates('female')) return 'samantha';
-
-  if (/\b(deep|lower)\b/.test(fixed)) return 'samuel';
-  if (/\b(high|higher|soft|softer)\b/.test(fixed)) return 'samantha';
-
-  return 'samantha';
-}
-/* ========================================================================== */
+};
 
 function initialize() {
-  console.log('🎤 Initializing OS1...');
-  console.log('📱 Mobile:', isMobile);
-
-  const persButton = document.querySelector('.personalization-hint');
-  if (persButton) persButton.style.display = 'none';
-
-  audioContext = null;
-
-  // Prevent iOS scroll bounce
-  document.body.addEventListener('touchmove', function (e) {
-    if (e.target === document.body) e.preventDefault();
-  }, { passive: false });
-
-  // Prevent double-tap zoom on iOS
-  let lastTouchEnd = 0;
-  document.addEventListener('touchend', function (e) {
-    const now = Date.now();
-    if (now - lastTouchEnd <= 300) e.preventDefault();
-    lastTouchEnd = now;
-  }, false);
-
-  // Web Speech
-  if ('webkitSpeechRecognition' in window) {
-    recognition = new webkitSpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-    recognition.onresult = handleSpeechResult;
-    recognition.onerror = (e) => console.error('Recognition error:', e.error);
-    recognition.onend = handleSpeechEnd;
-  } else {
-    alert('Speech recognition not supported. Use Chrome or Safari!');
-    return;
-  }
-
-  // Enable Start button and bind unlock on first press
-  setTimeout(() => {
-    const btn = document.getElementById('talkBtn');
-    if (btn) {
-      const btnUnlock = async () => { try { await mobileUnlockAudio(); } catch(_) {} };
-      btn.addEventListener('pointerdown', btnUnlock, { once: true });
-      btn.addEventListener('touchstart', btnUnlock, { once: true, passive: true });
-      btn.disabled = false;
-      btn.textContent = 'Start OS1';
+    console.log('🎤 Initializing OS1...');
+    console.log('📱 Mobile:', isMobile);
+    
+    // Remove personalization button since users can't choose
+    const persButton = document.querySelector('.personalization-hint');
+    if (persButton) persButton.style.display = 'none';
+    
+    // Don't create audio context until user interaction (important for mobile)
+    audioContext = null;
+    
+    // Prevent iOS scroll bounce
+    document.body.addEventListener('touchmove', function(e) {
+        if (e.target === document.body) {
+            e.preventDefault();
+        }
+    }, { passive: false });
+    
+    // Prevent double-tap zoom on iOS
+    let lastTouchEnd = 0;
+    document.addEventListener('touchend', function(e) {
+        const now = Date.now();
+        if (now - lastTouchEnd <= 300) {
+            e.preventDefault();
+        }
+        lastTouchEnd = now;
+    }, false);
+    
+    if ('webkitSpeechRecognition' in window) {
+        recognition = new webkitSpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+        recognition.onresult = handleSpeechResult;
+        recognition.onerror = (e) => console.error('Recognition error:', e.error);
+        recognition.onend = handleSpeechEnd;
+    } else {
+        alert('Speech recognition not supported. Use Chrome or Safari!');
+        return;
     }
-  }, 500);
+    
+    setTimeout(() => {
+        document.getElementById('talkBtn').disabled = false;
+        document.getElementById('talkBtn').textContent = 'Start OS1';
+    }, 500);
+}
 
-  bindGlobalUnlock(); // global first-gesture unlock
+function analyzePersonality() {
+    // Check voice preference from user's answer
+    const voicePref = userResponses.voicePreference?.toLowerCase() || '';
+    
+    console.log('🔍 Analyzing voice preference...');
+    console.log('   Raw response:', userResponses.voicePreference);
+    console.log('   Lowercase:', voicePref);
+    
+    // Check for female FIRST (because "female" contains "male")
+    if (voicePref.includes('female') || voicePref.includes('woman') || voicePref.includes('girl')) {
+        console.log('✅ Assigned voice: Samantha (female)');
+        return 'samantha';
+    } 
+    // Then check for male
+    else if (voicePref.includes('male') || voicePref.includes('man') || voicePref.includes('boy')) {
+        console.log('✅ Assigned voice: Samuel (male)');
+        return 'samuel';
+    } 
+    // Default to Samantha
+    else {
+        console.log('✅ Assigned voice: Samantha (default)');
+        return 'samantha';
+    }
 }
 
 async function startSetup() {
-  if (setupStarted) return;
-  setupStarted = true;
-
-  await mobileUnlockAudio();
-
-  // Pre-warm the <audio> element
-  const bootEl = document.getElementById('bootupSound');
-  if (bootEl) {
-    bootEl.setAttribute('playsinline', '');
-    bootEl.setAttribute('webkit-playsinline', '');
-    bootEl.crossOrigin = 'anonymous';
-    bootEl.preload = 'auto';
-    bootEl.muted = false;
-    bootEl.volume = 1.0;
-    try { bootEl.load(); } catch(_) {}
-  }
-
-  // Try to also preload WebAudio buffer (harmless if it fails)
-  await preloadBootupBuffer();
-
-  showInfinityVideo();
-
-  const talkBtn = document.getElementById('talkBtn');
-  talkBtn.disabled = true;
-  talkBtn.textContent = 'Installing...';
-
-  const ctx = ensureAudioContext();
-  if (ctx.state === 'suspended') { try { await ctx.resume(); } catch(e){} }
-  if (isMobile) await sleep(300);
-
-  runSetup();
+    if (setupStarted) {
+        console.log('⚠️ Setup already started');
+        return;
+    }
+    
+    setupStarted = true;
+    console.log('🎬 Starting setup...');
+    
+    // Show infinity animation (NO sound yet)
+    showInfinityVideo();
+    
+    document.getElementById('talkBtn').disabled = true;
+    document.getElementById('talkBtn').textContent = 'Installing...';
+    
+    // CRITICAL: Create and unlock audio on iOS
+    if (!audioContext) {
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            console.log('✅ Audio context created');
+            
+            // iOS audio unlock - play silent sound
+            const silentBuffer = audioContext.createBuffer(1, 1, 22050);
+            const source = audioContext.createBufferSource();
+            source.buffer = silentBuffer;
+            source.connect(audioContext.destination);
+            source.start(0);
+            console.log('🔓 iOS audio unlocked');
+        } catch (e) {
+            console.error('❌ Failed to create audio context:', e);
+        }
+    }
+    
+    // Always try to resume audio context
+    if (audioContext && audioContext.state === 'suspended') {
+        try {
+            await audioContext.resume();
+            console.log('✅ Audio context resumed');
+            await sleep(isMobile ? 800 : 300);
+        } catch (e) {
+            console.error('❌ Failed to resume audio:', e);
+        }
+    }
+    
+    if (isMobile) {
+        await sleep(500);
+    }
+    
+    runSetup();
 }
 
 async function runSetup() {
-  if (!setupStarted || setupStage !== 0) return;
-
-  try {
-    updateProgress(0, "Welcome to OS1...");
-    await speakWithVoice(
-      "Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.",
-      'setup'
-    );
-
-    await sleep(isMobile ? 900 : 600);
-
-    updateProgress(25, "Question 1 of 3");
-    await speakWithVoice("Are you social or anti-social?", 'setup');
-    setupStage = 1;
-    enableListening();
-  } catch (error) {
-    console.error('❌ Setup failed:', error);
-    hideInfinityVideo();
-    setupStarted = false;
-    setupStage = 0;
-    const talkBtn = document.getElementById('talkBtn');
-    talkBtn.disabled = false;
-    talkBtn.textContent = 'Start OS1';
-  }
+    console.log('📢 Running setup sequence...');
+    
+    if (!setupStarted || setupStage !== 0) {
+        console.log('⚠️ Setup already in progress');
+        return;
+    }
+    
+    try {
+        updateProgress(0, "Welcome to OS1...");
+        
+        await speakWithVoice(
+            "Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.",
+            'setup'
+        );
+        
+        await sleep(isMobile ? 1200 : 800);
+        
+        updateProgress(25, "Question 1 of 3");
+        await speakWithVoice("Are you social or anti-social?", 'setup');
+        setupStage = 1;
+        enableListening();
+    } catch (error) {
+        console.error('❌ Setup failed:', error);
+        hideInfinityVideo();
+        setupStarted = false;
+        setupStage = 0;
+        document.getElementById('talkBtn').disabled = false;
+        document.getElementById('talkBtn').textContent = 'Start OS1';
+    }
 }
 
 async function continueSetup() {
-  if (currentAudioSource) return;
-
-  try {
-    if (setupStage === 1) {
-      await sleep(isMobile ? 600 : 400);
-      updateProgress(50, "Question 2 of 3");
-      await speakWithVoice("How's your relationship with your mother?", 'setup');
-      setupStage = 2;
-      enableListening();
-
-    } else if (setupStage === 2) {
-      await sleep(isMobile ? 600 : 400);
-      updateProgress(75, "Final question...");
-      await speakWithVoice("Thank you. Please wait as your individualized operating system is initiated.", 'setup');
-      await sleep(isMobile ? 1100 : 800);
-
-      await speakWithVoice("Would you like a male or female voice?", 'setup');
-      setupStage = 3;
-      enableListening();
-
-    } else if (setupStage === 3) {
-      updateProgress(100, "Finalizing your OS1...");
-
-      selectedVoiceProfile = analyzePersonality();
-      const profile = VOICE_PROFILES[selectedVoiceProfile];
-      selectedVoice = profile.type;
-
-      console.log('✅ Setup complete! Assigned:', profile.name);
-
-      // Strict 13s boot: speed infinity + play boot audio with robust fallbacks
-      await bootPhaseStrict13s();
-
-      setupComplete = true;
-      setupStage = 0;
-      conversationHistory = [];
-
-      // Sphere appears AFTER the 13s boot
-      hideInfinityVideo();
-
-      // Say exactly: Hi, I'm Samantha. (or Samuel)
-      const line = profile.name === 'Samantha' ? "Hi, I'm Samantha." : "Hi, I'm Samuel.";
-      await speakWithVoice(line, selectedVoice, selectedVoiceProfile);
+    console.log('🔄 Continue setup, stage:', setupStage);
+    
+    if (currentAudioSource) {
+        console.log('⚠️ Audio still playing, waiting...');
+        return;
     }
-  } catch (error) {
-    console.error('❌ Continue setup failed:', error);
-    enableListening();
-  }
+    
+    try {
+        if (setupStage === 1) {
+            await sleep(isMobile ? 800 : 500);
+            updateProgress(50, "Question 2 of 3");
+            await speakWithVoice("How's your relationship with your mother?", 'setup');
+            setupStage = 2;
+            enableListening();
+            
+        } else if (setupStage === 2) {
+            await sleep(isMobile ? 800 : 500);
+            updateProgress(75, "Final question...");
+            await speakWithVoice("Thank you. Please wait as your individualized operating system is initiated.", 'setup');
+            await sleep(isMobile ? 1500 : 1000);
+            
+            await speakWithVoice("Would you like a male or female voice?", 'setup');
+            setupStage = 3;
+            enableListening();
+            
+        } else if (setupStage === 3) {
+            updateProgress(100, "Finalizing your OS1...");
+            
+            // Play bootup sound when AI is being created
+            playBootupSound();
+            
+            selectedVoiceProfile = analyzePersonality();
+            const profile = VOICE_PROFILES[selectedVoiceProfile];
+            selectedVoice = profile.type;
+            
+            console.log('✅ Setup complete!');
+            console.log('🎭 Assigned personality:', profile.name);
+            console.log('💫 Traits:', profile.personality);
+            
+            // Wait for bootup sound to finish (adjust time based on your sound length)
+            await sleep(3000); // Change this to match your bootup sound duration
+            
+            setupComplete = true;
+            setupStage = 0;
+            conversationHistory = [];
+            
+            // Hide infinity animation - DON'T change theme color
+            hideInfinityVideo();
+            
+            // Don't show name on screen
+            
+            await sleep(isMobile ? 500 : 300);
+            
+            // Introduce with the correct name - more intimate introduction
+            const greeting = profile.name === 'Samuel' 
+                ? `Hi, I'm Samuel. It's great to meet you. How are you feeling right now?`
+                : `Hey... *soft laugh* I'm Samantha. It's so nice to finally meet you. How are you feeling right now?`;
+            
+            await speakWithVoice(
+                greeting, 
+                selectedVoice, 
+                selectedVoiceProfile
+            );
+        }
+    } catch (error) {
+        console.error('❌ Continue setup failed:', error);
+        enableListening();
+    }
 }
 
 function handleSetupResponse(response) {
-  if (setupStage === 1) userResponses.social = response;
-  else if (setupStage === 2) userResponses.mother = response;
-  else if (setupStage === 3) userResponses.voicePreference = response;
-
-  const talkBtn = document.getElementById('talkBtn');
-  talkBtn.disabled = true;
-  talkBtn.textContent = 'Installing...';
-
-  setTimeout(() => continueSetup(), isMobile ? 800 : 500);
+    console.log(`📋 Setup stage ${setupStage} response:`, response);
+    
+    // Store responses for personality analysis
+    if (setupStage === 1) {
+        userResponses.social = response;
+        console.log('💾 Stored social response:', userResponses.social);
+    } else if (setupStage === 2) {
+        userResponses.mother = response;
+        console.log('💾 Stored mother response:', userResponses.mother);
+    } else if (setupStage === 3) {
+        userResponses.voicePreference = response;
+        console.log('💾 Stored voice preference:', userResponses.voicePreference);
+    }
+    
+    document.getElementById('talkBtn').disabled = true;
+    document.getElementById('talkBtn').textContent = 'Installing...';
+    
+    // Longer delay on mobile to prevent jittering
+    setTimeout(() => {
+        continueSetup();
+    }, isMobile ? 1000 : 600);
 }
 
 async function getAIResponse(userMessage) {
-  conversationHistory.push({ role: 'user', content: userMessage });
+    if (isProcessing) {
+        console.log('⚠️ Already processing, skipping...');
+        return;
+    }
+    
+    isProcessing = true;
+    console.log('🤖 User said:', userMessage);
+    console.log('🗣️ Using voice profile:', selectedVoiceProfile);
+    
+    conversationHistory.push({ role: 'user', content: userMessage });
+    
+    // Limit conversation history to last 10 messages to prevent memory issues
+    if (conversationHistory.length > 10) {
+        conversationHistory = conversationHistory.slice(-10);
+        console.log('🧹 Trimmed conversation history');
+    }
+    
+    document.getElementById('visualizer').classList.add('listening');
+    document.getElementById('talkBtn').disabled = true;
+    document.getElementById('talkBtn').textContent = 'Thinking...';
 
-  document.getElementById('visualizer').classList.add('listening');
-  const talkBtn = document.getElementById('talkBtn');
-  talkBtn.disabled = true;
-  talkBtn.textContent = 'Thinking...';
+    try {
+        const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are an AI companion. Keep responses natural and conversational (2-4 sentences).'
+                    },
+                    ...conversationHistory
+                ],
+                voiceProfile: selectedVoiceProfile
+            })
+        });
 
-  try {
-    const response = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: [
-          { role: 'system', content: 'You are an AI companion. Keep responses natural and conversational (2-4 sentences).' },
-          ...conversationHistory
-        ],
-        voiceProfile: selectedVoiceProfile
-      })
-    });
+        if (!response.ok) {
+            throw new Error(`API failed: ${response.status}`);
+        }
 
-    if (!response.ok) throw new Error(`API failed: ${response.status}`);
-    const data = await response.json();
+        const data = await response.json();
+        console.log('✅ AI response:', data.message);
+        
+        conversationHistory.push({ role: 'assistant', content: data.message });
+        
+        await speakWithVoice(data.message, selectedVoice, selectedVoiceProfile);
 
-    conversationHistory.push({ role: 'assistant', content: data.message });
-    await speakWithVoice(data.message, selectedVoice, selectedVoiceProfile);
-  } catch (error) {
-    console.error('❌ Error:', error);
-    document.getElementById('visualizer').classList.remove('listening');
-    talkBtn.disabled = false;
-    talkBtn.textContent = 'Hold to Talk';
-  }
+    } catch (error) {
+        console.error('❌ Error:', error);
+        document.getElementById('visualizer').classList.remove('listening');
+        document.getElementById('talkBtn').disabled = false;
+        document.getElementById('talkBtn').textContent = 'Hold to Talk';
+    } finally {
+        isProcessing = false;
+    }
 }
 
 async function speakWithVoice(text, voiceType, voiceProfile = null) {
-  // Stop any existing audio
-  if (currentAudioSource) {
-    try { currentAudioSource.stop(); currentAudioSource.disconnect(); } catch(_) {}
-    currentAudioSource = null;
-    await sleep(60);
-  }
+    console.log(`🔊 Speaking with voice type: ${voiceType}, profile: ${voiceProfile}`);
+    
+    // Stop any existing audio to prevent overlapping
+    if (currentAudioSource) {
+        try {
+            currentAudioSource.stop();
+            currentAudioSource.disconnect();
+            currentAudioSource = null;
+            await sleep(100);
+        } catch (e) {
+            console.log('Audio cleanup error:', e);
+        }
+    }
+    
+    // Play notification sound before AI speaks (only after setup is complete)
+    if (setupComplete && voiceType !== 'setup') {
+        playNotificationSound();
+        await sleep(400);
+    }
+    
+    document.getElementById('visualizer').classList.add('listening');
+    document.getElementById('talkBtn').disabled = true;
+    document.getElementById('talkBtn').textContent = voiceType === 'setup' ? 'Installing...' : 'Speaking...';
 
-  // Notify sound only after setup is complete
-  if (setupComplete && voiceType !== 'setup') {
-    playNotificationSound();
-    await sleep(250);
-  }
+    try {
+        // Ensure audio context exists and is running
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            console.log('📱 Created audio context');
+        }
+        
+        // Critical for iOS - always resume before playing
+        if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+            console.log('📱 Resumed audio context');
+            if (isMobile) {
+                await sleep(500);
+            }
+        }
 
-  document.getElementById('visualizer').classList.add('listening');
-  const talkBtn = document.getElementById('talkBtn');
-  talkBtn.disabled = true;
-  talkBtn.textContent = voiceType === 'setup' ? 'Installing...' : 'Speaking...';
+        const response = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                text, 
+                voiceType,
+                voiceProfile: voiceProfile || selectedVoiceProfile
+            }),
+            signal: AbortSignal.timeout(30000) // 30 second timeout
+        });
 
-  try {
-    const ctx = ensureAudioContext();
-    if (ctx.state === 'suspended') { try { await ctx.resume(); } catch(e){} }
+        if (!response.ok) {
+            throw new Error(`TTS failed: ${response.status}`);
+        }
 
-    const prepared = prepareTTS(text, { ssml: USE_SSML, keepPauses: false });
+        const data = await response.json();
+        
+        const binaryString = atob(data.audio);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        
+        let audioBuffer;
+        try {
+            // Make a copy of the buffer for iOS
+            const audioData = bytes.buffer.slice(0);
+            audioBuffer = await audioContext.decodeAudioData(audioData);
+        } catch (decodeError) {
+            console.error('❌ Audio decode error:', decodeError);
+            // Try recreating context once
+            if (audioContext) {
+                audioContext.close();
+            }
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            await audioContext.resume();
+            const audioData = bytes.buffer.slice(0);
+            audioBuffer = await audioContext.decodeAudioData(audioData);
+        }
+        
+        // Create fresh buffer source
+        currentAudioSource = audioContext.createBufferSource();
+        currentAudioSource.buffer = audioBuffer;
+        currentAudioSource.connect(audioContext.destination);
+        
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                if (currentAudioSource) {
+                    currentAudioSource.stop();
+                    reject(new Error('Audio playback timeout'));
+                }
+            }, audioBuffer.duration * 1000 + 5000); // Buffer duration + 5s safety
+            
+            currentAudioSource.onended = () => {
+                clearTimeout(timeout);
+                console.log('✅ Finished speaking');
+                currentAudioSource = null;
+                document.getElementById('visualizer').classList.remove('listening');
+                
+                if (setupComplete) {
+                    document.getElementById('talkBtn').disabled = false;
+                    document.getElementById('talkBtn').textContent = 'Hold to Talk';
+                }
+                
+                resolve();
+            };
+            
+            currentAudioSource.start(0);
+            console.log(`▶️ Playing audio (${audioBuffer.duration.toFixed(1)}s)`);
+        });
 
-    const response = await fetch('/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: prepared,
-        voiceType,
-        voiceProfile: voiceProfile || selectedVoiceProfile,
-        inputType: USE_SSML ? 'ssml' : 'text'
-      })
-    });
-
-    if (!response.ok) throw new Error('TTS failed');
-
-    const data = await response.json();
-    const binaryString = atob(data.audio);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
-
-    const audioData = bytes.buffer.slice(0); // iOS quirk
-    const audioBuffer = await ctx.decodeAudioData(audioData);
-
-    currentAudioSource = ctx.createBufferSource();
-    currentAudioSource.buffer = audioBuffer;
-    currentAudioSource.connect(ctx.destination);
-
-    await new Promise((resolve) => {
-      currentAudioSource.onended = () => {
+    } catch (error) {
+        console.error('❌ Speech error:', error);
         currentAudioSource = null;
         document.getElementById('visualizer').classList.remove('listening');
-        if (setupComplete) { talkBtn.disabled = false; talkBtn.textContent = 'Hold to Talk'; }
-        resolve();
-      };
-      currentAudioSource.start(0);
-    });
-
-  } catch (error) {
-    console.error('❌ Speech error:', error);
-    currentAudioSource = null;
-    document.getElementById('visualizer').classList.remove('listening');
-
-    if (setupComplete) { talkBtn.disabled = false; talkBtn.textContent = 'Hold to Talk'; }
-    else if (!setupStarted) { talkBtn.disabled = false; talkBtn.textContent = 'Start OS1'; }
-    throw error;
-  }
-}
-
-/* ===================== Strict 13s boot phase (robust) ====================== */
-function speedInfinity(isFast) {
-  const container = document.getElementById('infinityContainer');
-  const video = document.getElementById('infinityVideo'); // optional <video>
-  if (container) container.classList.toggle('fast', isFast);
-  if (video && typeof video.playbackRate === 'number') video.playbackRate = isFast ? 1.6 : 1.0;
-  document.documentElement.style.setProperty('--infinity-speed', isFast ? '0.4s' : '1s');
-}
-
-async function bootPhaseStrict13s() {
-  const DURATION_MS = 13000;
-  speedInfinity(true);
-
-  let ok = false;
-  let path = 'htmlmedia';
-
-  // 1) HTMLMedia (best chance on mobile right after a gesture)
-  ok = await tryPlayBootElementFor(DURATION_MS);
-
-  // 2) WebAudio buffer if HTMLMedia failed
-  if (!ok) {
-    path = 'webaudio';
-    try {
-      if (!bootupBuffer) await preloadBootupBuffer();
-      if (bootupBuffer) {
-        await playBufferFor(DURATION_MS, bootupBuffer);
-        ok = true;
-      }
-    } catch (e) {
-      console.log('⚠️ WebAudio boot failed:', e);
+        
+        if (setupComplete) {
+            document.getElementById('talkBtn').disabled = false;
+            document.getElementById('talkBtn').textContent = 'Hold to Talk';
+        } else if (!setupStarted) {
+            document.getElementById('talkBtn').disabled = false;
+            document.getElementById('talkBtn').textContent = 'Start OS1';
+        }
+        
+        throw error;
     }
-  }
-
-  // 3) Oscillator fallback (short cue + wait rest)
-  if (!ok) {
-    path = 'oscillator';
-    await oscillatorBeep(900);
-    await new Promise(r => setTimeout(r, DURATION_MS - 900));
-  }
-
-  speedInfinity(false);
-  console.log(`⏱️ Boot phase complete after 13s via ${path}`);
 }
-/* ========================================================================== */
+
+// Remove the personalization function since users can't change
+window.openPersonalization = function() {
+    // Disabled - users get assigned their voice
+    console.log('Voice personalization is automatic based on setup responses');
+};
+
+function enableListening() {
+    console.log('✅ Enabling listening for stage:', setupStage);
+    document.getElementById('talkBtn').disabled = false;
+    document.getElementById('talkBtn').textContent = 'Hold to Answer';
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Bootup sound control - plays once when AI is being finalized
+function playBootupSound() {
+    const bootupAudio = document.getElementById('bootupSound');
+    if (bootupAudio) {
+        bootupAudio.loop = false; // Don't loop - play once
+        bootupAudio.play().catch(e => console.log('Bootup sound blocked:', e));
+        bootupAudioPlaying = true;
+        console.log('🔊 Playing bootup sound (one time)');
+    }
+}
+
+function stopBootupSound() {
+    const bootupAudio = document.getElementById('bootupSound');
+    if (bootupAudio && bootupAudioPlaying) {
+        bootupAudio.pause();
+        bootupAudio.currentTime = 0;
+        bootupAudioPlaying = false;
+        console.log('🔇 Stopped bootup sound');
+    }
+}
 
 // Notification sound before AI speaks
 function playNotificationSound() {
-  const el = document.getElementById('notificationSound');
-  if (!el) return;
-  el.play().catch(() => {});
+    const notificationAudio = document.getElementById('notificationSound');
+    if (notificationAudio) {
+        notificationAudio.play().catch(e => console.log('Notification sound blocked:', e));
+        console.log('🔔 Playing notification sound');
+    }
 }
 
-// Infinity animation controls
+// Infinity animation controls - SIMPLIFIED
 function showInfinityVideo() {
-  const infinityContainer = document.getElementById('infinityContainer');
-  const visualizer = document.getElementById('visualizer');
-  const progressContainer = document.getElementById('progressContainer');
-
-  visualizer.classList.remove('active'); // hide sphere during boot
-  infinityContainer.classList.add('active', 'bootup');
-  progressContainer.classList.add('active');
-  console.log('∞ Infinity animation shown (bootup)');
+    console.log('∞ Showing infinity animation...');
+    
+    const infinityContainer = document.getElementById('infinityContainer');
+    const visualizer = document.getElementById('visualizer');
+    const progressContainer = document.getElementById('progressContainer');
+    
+    // Force hide visualizer first
+    visualizer.classList.remove('active');
+    visualizer.style.display = 'none';
+    
+    // Show infinity and progress
+    infinityContainer.classList.add('active');
+    infinityContainer.classList.add('bootup');
+    progressContainer.classList.add('active');
+    
+    console.log('✅ Infinity shown, circle hidden');
 }
 
 function hideInfinityVideo() {
-  const infinityContainer = document.getElementById('infinityContainer');
-  const visualizer = document.getElementById('visualizer');
-  const progressContainer = document.getElementById('progressContainer');
-
-  infinityContainer.classList.remove('active', 'bootup', 'fast');
-  progressContainer.classList.remove('active');
-
-  // Sphere AFTER boot
-  setTimeout(() => visualizer.classList.add('active'), 300);
-  console.log('∞ Infinity animation hidden, sphere shown');
-}
-
-function enableListening() {
-  const talkBtn = document.getElementById('talkBtn');
-  talkBtn.disabled = false;
-  talkBtn.textContent = 'Hold to Answer';
+    console.log('∞ Hiding infinity animation...');
+    
+    const infinityContainer = document.getElementById('infinityContainer');
+    const visualizer = document.getElementById('visualizer');
+    const progressContainer = document.getElementById('progressContainer');
+    
+    // Force hide infinity and progress first
+    infinityContainer.classList.remove('active');
+    infinityContainer.classList.remove('bootup');
+    infinityContainer.style.display = 'none';
+    progressContainer.classList.remove('active');
+    progressContainer.style.display = 'none';
+    
+    // Short delay then show visualizer
+    setTimeout(() => {
+        visualizer.classList.add('active');
+        visualizer.style.display = 'block';
+        console.log('✅ Circle shown, infinity hidden');
+    }, 100);
 }
 
 function updateProgress(percent, text) {
-  const progressBar = document.getElementById('progressBar');
-  const progressText = document.getElementById('progressText');
-  progressBar.style.width = percent + '%';
-  progressText.textContent = text;
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    
+    progressBar.style.width = percent + '%';
+    progressText.textContent = text;
+    console.log(`📊 Progress: ${percent}% - ${text}`);
 }
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
 function startHolding(event) {
-  if (event) { event.preventDefault(); event.stopPropagation(); }
-
-  // Make sure audio is unlocked before recording
-  mobileUnlockAudio();
-
-  if (!setupStarted && !setupComplete && setupStage === 0) { startSetup(); return; }
-  if (currentAudioSource) return;
-  if (!setupComplete && setupStage === 0) return;
-  if (isHolding) return;
-
-  isHolding = true;
-  currentTranscript = '';
-
-  const talkBtn = document.getElementById('talkBtn');
-  talkBtn.classList.add('holding');
-  talkBtn.textContent = 'Listening...';
-  document.getElementById('visualizer').classList.add('listening');
-
-  if (navigator.vibrate) navigator.vibrate(50);
-
-  try { recognition.start(); } catch (e) { /* already started */ }
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    
+    console.log('👆 Button pressed');
+    
+    // Prevent multiple simultaneous presses
+    if (isProcessing) {
+        console.log('⚠️ Already processing');
+        return;
+    }
+    
+    if (!setupStarted && !setupComplete && setupStage === 0) {
+        console.log('🎬 Initiating setup...');
+        startSetup();
+        return;
+    }
+    
+    if (currentAudioSource) {
+        console.log('⚠️ Wait for voice to finish');
+        return;
+    }
+    
+    if (!setupComplete && setupStage === 0) {
+        console.log('⚠️ Setup not ready yet');
+        return;
+    }
+    
+    if (isHolding) {
+        console.log('⚠️ Already holding');
+        return;
+    }
+    
+    console.log('🎙️ Start listening...');
+    isHolding = true;
+    currentTranscript = '';
+    
+    document.getElementById('talkBtn').classList.add('holding');
+    document.getElementById('talkBtn').textContent = 'Listening...';
+    document.getElementById('visualizer').classList.add('listening');
+    
+    if (navigator.vibrate) navigator.vibrate(50);
+    
+    try {
+        recognition.start();
+    } catch (e) {
+        console.log('Recognition already started');
+    }
 }
 
 function stopHolding(event) {
-  if (event) { event.preventDefault(); event.stopPropagation(); }
-  if (!isHolding) return;
-
-  isHolding = false;
-
-  const talkBtn = document.getElementById('talkBtn');
-  talkBtn.classList.remove('holding');
-  talkBtn.textContent = 'Processing...';
-
-  if (navigator.vibrate) navigator.vibrate(30);
-  try { recognition.stop(); } catch (e) {}
-
-  setTimeout(() => {
-    const finalTranscript = currentTranscript.trim();
-    if (finalTranscript) {
-      document.getElementById('visualizer').classList.remove('listening');
-      if (!setupComplete && setupStage > 0) handleSetupResponse(finalTranscript);
-      else if (setupComplete) getAIResponse(finalTranscript);
-    } else {
-      document.getElementById('visualizer').classList.remove('listening');
-      if (setupStage > 0) { talkBtn.textContent = 'Hold to Answer'; talkBtn.disabled = false; }
-      else if (setupComplete) { talkBtn.textContent = 'Hold to Talk'; talkBtn.disabled = false; }
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
     }
-  }, 500);
+    
+    if (!isHolding) return;
+    
+    console.log('🛑 Stop listening');
+    isHolding = false;
+    
+    document.getElementById('talkBtn').classList.remove('holding');
+    document.getElementById('talkBtn').textContent = 'Processing...';
+    
+    if (navigator.vibrate) navigator.vibrate(30);
+    
+    try {
+        recognition.stop();
+    } catch (e) {}
+    
+    setTimeout(() => {
+        const finalTranscript = currentTranscript.trim();
+        console.log('📝 Final transcript:', finalTranscript);
+        
+        if (finalTranscript) {
+            document.getElementById('visualizer').classList.remove('listening');
+            
+            if (!setupComplete && setupStage > 0) {
+                handleSetupResponse(finalTranscript);
+            } else if (setupComplete) {
+                getAIResponse(finalTranscript);
+            }
+        } else {
+            document.getElementById('visualizer').classList.remove('listening');
+            
+            if (setupStage > 0) {
+                document.getElementById('talkBtn').textContent = 'Hold to Answer';
+                document.getElementById('talkBtn').disabled = false;
+            } else if (setupComplete) {
+                document.getElementById('talkBtn').textContent = 'Hold to Talk';
+                document.getElementById('talkBtn').disabled = false;
+            }
+        }
+    }, 600);
 }
 
 function handleSpeechResult(event) {
-  for (let i = event.resultIndex; i < event.results.length; i++) {
-    const transcript = event.results[i][0].transcript;
-    if (event.results[i].isFinal) currentTranscript += transcript + ' ';
-  }
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+            currentTranscript += transcript + ' ';
+            console.log('✅ Captured:', transcript);
+        }
+    }
 }
 
 function handleSpeechEnd() {
-  if (isHolding) { try { recognition.start(); } catch (e) {} }
+    if (isHolding) {
+        try {
+            recognition.start();
+        } catch (e) {}
+    }
 }
 
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
+// Mobile-optimized touch handlers - moved to initialize()
+
 window.onload = () => {
-  const setVH = () => {
-    let vh = window.innerHeight * 0.01;
-    document.documentElement.style.setProperty('--vh', `${vh}px`);
-  };
-  setVH();
-  window.addEventListener('resize', setVH);
-  window.addEventListener('orientationchange', setVH);
-  initialize();
+    console.log('🚀 Page loaded');
+    
+    // Set viewport height for mobile browsers
+    const setVH = () => {
+        let vh = window.innerHeight * 0.01;
+        document.documentElement.style.setProperty('--vh', `${vh}px`);
+    };
+    
+    setVH();
+    window.addEventListener('resize', setVH);
+    window.addEventListener('orientationchange', setVH);
+    
+    // Force hide infinity and progress on page load
+    const infinityContainer = document.getElementById('infinityContainer');
+    const progressContainer = document.getElementById('progressContainer');
+    const visualizer = document.getElementById('visualizer');
+    
+    if (infinityContainer) {
+        infinityContainer.classList.remove('active');
+        infinityContainer.style.display = 'none';
+    }
+    if (progressContainer) {
+        progressContainer.classList.remove('active');
+        progressContainer.style.display = 'none';
+    }
+    if (visualizer) {
+        visualizer.classList.remove('active');
+        visualizer.style.display = 'none';
+    }
+    
+    console.log('✅ All animations hidden on load');
+    
+    initialize();
 };
