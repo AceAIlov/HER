@@ -92,6 +92,23 @@ function initialize() {
     // Don't create audio context until user interaction (important for mobile)
     audioContext = null;
     
+    // Prevent iOS scroll bounce
+    document.body.addEventListener('touchmove', function(e) {
+        if (e.target === document.body) {
+            e.preventDefault();
+        }
+    }, { passive: false });
+    
+    // Prevent double-tap zoom on iOS
+    let lastTouchEnd = 0;
+    document.addEventListener('touchend', function(e) {
+        const now = Date.now();
+        if (now - lastTouchEnd <= 300) {
+            e.preventDefault();
+        }
+        lastTouchEnd = now;
+    }, false);
+    
     if ('webkitSpeechRecognition' in window) {
         recognition = new webkitSpeechRecognition();
         recognition.continuous = true;
@@ -211,6 +228,9 @@ async function startSetup() {
     setupStarted = true;
     console.log('🎬 Starting setup...');
     
+    // Play bootup sound
+    playBootupSound();
+    
     // Show infinity animation
     showInfinityVideo();
     
@@ -321,15 +341,12 @@ async function continueSetup() {
             setupStage = 0;
             conversationHistory = [];
             
-            // Hide infinity animation with fade
+            // Hide infinity animation - DON'T change theme color
             hideInfinityVideo();
-            
-            document.body.className = profile.theme;
             
             document.getElementById('aiName').textContent = profile.name;
             document.getElementById('aiName').style.opacity = '1';
-            document.getElementById('aiSubtitle').textContent = `Your ${profile.personality} AI companion`;
-            document.getElementById('aiSubtitle').style.opacity = '1';
+            // Remove subtitle - keep it clean
             
             await sleep(isMobile ? 1000 : 500);
             await speakWithVoice(
@@ -534,6 +551,15 @@ function enableListening() {
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Bootup sound control
+function playBootupSound() {
+    const bootupAudio = document.getElementById('bootupSound');
+    if (bootupAudio) {
+        bootupAudio.play().catch(e => console.log('Bootup sound blocked:', e));
+        console.log('🔊 Playing bootup sound');
+    }
 }
 
 // Infinity animation controls
