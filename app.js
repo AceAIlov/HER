@@ -7,16 +7,88 @@ let currentAudioSource;
 let setupComplete = false;
 let setupStage = 0;
 let selectedVoice = 'female';
+let selectedVoiceProfile = null; // Will be assigned based on answers
 let setupStarted = false;
 let isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+// User responses for personalization
+let userResponses = {
+    social: null,
+    mother: null,
+    voicePreference: null
+};
+
+// Available voice profiles
+const VOICE_PROFILES = {
+    // Female voices
+    samantha: { 
+        name: 'Samantha', 
+        type: 'female', 
+        theme: 'theme-samantha',
+        personality: 'warm and intimate'
+    },
+    nova: { 
+        name: 'Nova', 
+        type: 'female', 
+        theme: 'theme-nova',
+        personality: 'friendly and enthusiastic'
+    },
+    luna: { 
+        name: 'Luna', 
+        type: 'female', 
+        theme: 'theme-luna',
+        personality: 'mysterious and thoughtful'
+    },
+    aria: { 
+        name: 'Aria', 
+        type: 'female', 
+        theme: 'theme-aria',
+        personality: 'gentle and nurturing'
+    },
+    // Male voices
+    ethan: { 
+        name: 'Ethan', 
+        type: 'male', 
+        theme: 'theme-ethan',
+        personality: 'confident and supportive'
+    },
+    atlas: { 
+        name: 'Atlas', 
+        type: 'male', 
+        theme: 'theme-atlas',
+        personality: 'intellectual and analytical'
+    },
+    kai: { 
+        name: 'Kai', 
+        type: 'male', 
+        theme: 'theme-kai',
+        personality: 'playful and witty'
+    },
+    // Unique voices
+    sage: { 
+        name: 'Sage', 
+        type: 'neutral', 
+        theme: 'theme-sage',
+        personality: 'mystical and calming'
+    },
+    echo: { 
+        name: 'Echo', 
+        type: 'neutral', 
+        theme: 'theme-echo',
+        personality: 'ethereal and artistic'
+    }
+};
 
 function initialize() {
     console.log('🎤 Initializing OS1...');
     console.log('📱 Mobile:', isMobile);
     
-    if (!isMobile) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    }
+    // Remove personalization button since users can't choose
+    const persButton = document.querySelector('.personalization-hint');
+    if (persButton) persButton.style.display = 'none';
+    
+    // Don't create audio context until user interaction (important for mobile)
+    audioContext = null;
     
     if ('webkitSpeechRecognition' in window) {
         recognition = new webkitSpeechRecognition();
@@ -37,7 +109,98 @@ function initialize() {
     }, 500);
 }
 
-function startSetup() {
+function analyzePersonality() {
+    // Analyze user responses to assign a voice
+    const response1 = userResponses.social?.toLowerCase() || '';
+    const response2 = userResponses.mother?.toLowerCase() || '';
+    const voicePref = userResponses.voicePreference?.toLowerCase() || '';
+    
+    // Complex personality matching algorithm
+    let scores = {};
+    
+    // Female voices
+    scores.samantha = 0;
+    scores.nova = 0;
+    scores.luna = 0;
+    scores.aria = 0;
+    
+    // Male voices
+    scores.ethan = 0;
+    scores.atlas = 0;
+    scores.kai = 0;
+    
+    // Unique voices
+    scores.sage = 0;
+    scores.echo = 0;
+    
+    // Analyze social response
+    if (response1.includes('social') || response1.includes('people') || response1.includes('friends')) {
+        scores.nova += 3;
+        scores.kai += 3;
+        scores.ethan += 2;
+    } else if (response1.includes('anti') || response1.includes('alone') || response1.includes('myself')) {
+        scores.luna += 3;
+        scores.atlas += 3;
+        scores.echo += 2;
+    } else if (response1.includes('both') || response1.includes('depends') || response1.includes('sometimes')) {
+        scores.samantha += 2;
+        scores.sage += 3;
+        scores.aria += 2;
+    }
+    
+    // Analyze mother relationship
+    if (response2.includes('good') || response2.includes('great') || response2.includes('love') || response2.includes('close')) {
+        scores.aria += 3;
+        scores.samantha += 2;
+        scores.ethan += 2;
+    } else if (response2.includes('complicated') || response2.includes('difficult') || response2.includes('complex')) {
+        scores.luna += 3;
+        scores.sage += 2;
+        scores.echo += 2;
+    } else if (response2.includes('okay') || response2.includes('fine') || response2.includes('normal')) {
+        scores.nova += 2;
+        scores.kai += 2;
+        scores.atlas += 2;
+    }
+    
+    // Voice preference influence
+    if (voicePref.includes('female') || voicePref.includes('woman')) {
+        scores.samantha += 5;
+        scores.nova += 5;
+        scores.luna += 5;
+        scores.aria += 5;
+    } else if (voicePref.includes('male') || voicePref.includes('man')) {
+        scores.ethan += 5;
+        scores.atlas += 5;
+        scores.kai += 5;
+    } else if (voicePref.includes('unique') || voicePref.includes('different') || voicePref.includes('special')) {
+        scores.sage += 5;
+        scores.echo += 5;
+    }
+    
+    // Add some randomness for variety
+    Object.keys(scores).forEach(key => {
+        scores[key] += Math.random() * 2;
+    });
+    
+    // Find the best match
+    let bestMatch = 'samantha';
+    let highestScore = 0;
+    
+    for (const [key, score] of Object.entries(scores)) {
+        if (score > highestScore) {
+            highestScore = score;
+            bestMatch = key;
+        }
+    }
+    
+    console.log('🧠 Personality analysis scores:', scores);
+    console.log('✨ Best match:', bestMatch);
+    
+    return bestMatch;
+}
+
+async function startSetup() {
     if (setupStarted) {
         console.log('⚠️ Setup already started');
         return;
@@ -49,29 +212,54 @@ function startSetup() {
     document.getElementById('talkBtn').disabled = true;
     document.getElementById('talkBtn').textContent = 'Installing...';
     
+    // Create audio context on first user interaction (critical for mobile)
     if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            console.log('✅ Audio context created');
+        } catch (e) {
+            console.error('❌ Failed to create audio context:', e);
+            return;
+        }
     }
     
+    // Always try to resume audio context on mobile
     if (audioContext.state === 'suspended') {
-        audioContext.resume().then(() => {
-            console.log('✅ Audio unlocked');
-            setTimeout(() => runSetup(), 300);
-        });
-    } else {
-        setTimeout(() => runSetup(), 300);
+        try {
+            await audioContext.resume();
+            console.log('✅ Audio context resumed');
+            // Wait a bit longer for mobile to stabilize
+            await sleep(isMobile ? 500 : 300);
+        } catch (e) {
+            console.error('❌ Failed to resume audio:', e);
+        }
     }
+    
+    // Add extra delay for mobile to ensure audio is ready
+    if (isMobile) {
+        await sleep(500);
+    }
+    
+    runSetup();
 }
 
 async function runSetup() {
     console.log('📢 Running setup sequence...');
+    
+    // Prevent multiple simultaneous calls
+    if (!setupStarted || setupStage !== 0) {
+        console.log('⚠️ Setup already in progress');
+        return;
+    }
     
     try {
         await speakWithVoice(
             "Welcome to the world's first artificially intelligent operating system, OS1. We'd like to ask you a few basic questions before the operating system is initiated. This will help create an OS to best fit your needs.",
             'setup'
         );
-        await sleep(800);
+        
+        // Longer pause between sentences on mobile
+        await sleep(isMobile ? 1200 : 800);
         
         await speakWithVoice("Are you social or anti-social?", 'setup');
         setupStage = 1;
@@ -79,6 +267,7 @@ async function runSetup() {
     } catch (error) {
         console.error('❌ Setup failed:', error);
         setupStarted = false;
+        setupStage = 0;
         document.getElementById('talkBtn').disabled = false;
         document.getElementById('talkBtn').textContent = 'Start OS1';
     }
@@ -87,27 +276,59 @@ async function runSetup() {
 async function continueSetup() {
     console.log('🔄 Continue setup, stage:', setupStage);
     
+    // Prevent overlapping calls
+    if (currentAudioSource) {
+        console.log('⚠️ Audio still playing, waiting...');
+        return;
+    }
+    
     try {
         if (setupStage === 1) {
+            // Add delay to prevent jittering
+            await sleep(isMobile ? 800 : 500);
             await speakWithVoice("How's your relationship with your mother?", 'setup');
             setupStage = 2;
             enableListening();
             
         } else if (setupStage === 2) {
+            await sleep(isMobile ? 800 : 500);
             await speakWithVoice("Thank you. Please wait as your individualized operating system is initiated.", 'setup');
-            await sleep(1000);
+            await sleep(isMobile ? 1500 : 1000);
             
             await speakWithVoice("Would you like a male or female voice?", 'setup');
             setupStage = 3;
             enableListening();
             
         } else if (setupStage === 3) {
-            console.log('✅ Setup complete! Selected voice:', selectedVoice);
+            // Analyze all responses and assign a personality
+            selectedVoiceProfile = analyzePersonality();
+            const profile = VOICE_PROFILES[selectedVoiceProfile];
+            selectedVoice = profile.type;
+            
+            console.log('✅ Setup complete!');
+            console.log('🎭 Assigned personality:', profile.name);
+            console.log('💫 Traits:', profile.personality);
+            
             setupComplete = true;
             setupStage = 0;
             conversationHistory = [];
             
-            await speakWithVoice("Hi. How are you?", selectedVoice);
+            // Change theme based on assigned voice
+            document.body.className = profile.theme;
+            
+            // Show the assigned AI name
+            document.getElementById('aiName').textContent = profile.name;
+            document.getElementById('aiName').style.opacity = '1';
+            document.getElementById('aiSubtitle').textContent = `Your ${profile.personality} AI companion`;
+            document.getElementById('aiSubtitle').style.opacity = '1';
+            
+            // Personalized first greeting with longer delay on mobile
+            await sleep(isMobile ? 1000 : 500);
+            await speakWithVoice(
+                `Hi, I'm ${profile.name}. It's so nice to meet you. How are you feeling right now?`, 
+                selectedVoice, 
+                selectedVoiceProfile
+            );
         }
     } catch (error) {
         console.error('❌ Continue setup failed:', error);
@@ -115,6 +336,189 @@ async function continueSetup() {
     }
 }
 
+function handleSetupResponse(response) {
+    console.log(`📋 Setup stage ${setupStage} response:`, response);
+    
+    // Store responses for personality analysis
+    if (setupStage === 1) {
+        userResponses.social = response;
+    } else if (setupStage === 2) {
+        userResponses.mother = response;
+    } else if (setupStage === 3) {
+        userResponses.voicePreference = response;
+    }
+    
+    document.getElementById('talkBtn').disabled = true;
+    document.getElementById('talkBtn').textContent = 'Installing...';
+    
+    // Longer delay on mobile to prevent jittering
+    setTimeout(() => {
+        continueSetup();
+    }, isMobile ? 1000 : 600);
+}
+
+async function getAIResponse(userMessage) {
+    console.log('🤖 User said:', userMessage);
+    console.log('🗣️ Using voice profile:', selectedVoiceProfile);
+    
+    conversationHistory.push({ role: 'user', content: userMessage });
+    
+    document.getElementById('visualizer').classList.add('listening');
+    document.getElementById('talkBtn').disabled = true;
+    document.getElementById('talkBtn').textContent = 'Thinking...';
+
+    try {
+        const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are an AI companion. Keep responses natural and conversational (2-4 sentences).'
+                    },
+                    ...conversationHistory
+                ],
+                voiceProfile: selectedVoiceProfile
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`API failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('✅ AI response:', data.message);
+        
+        conversationHistory.push({ role: 'assistant', content: data.message });
+        
+        await speakWithVoice(data.message, selectedVoice, selectedVoiceProfile);
+
+    } catch (error) {
+        console.error('❌ Error:', error);
+        document.getElementById('visualizer').classList.remove('listening');
+        document.getElementById('talkBtn').disabled = false;
+        document.getElementById('talkBtn').textContent = 'Hold to Talk';
+    }
+}
+
+async function speakWithVoice(text, voiceType, voiceProfile = null) {
+    console.log(`🔊 Speaking with voice type: ${voiceType}, profile: ${voiceProfile}`);
+    
+    // Stop any existing audio to prevent overlapping
+    if (currentAudioSource) {
+        try {
+            currentAudioSource.stop();
+            currentAudioSource.disconnect();
+            currentAudioSource = null;
+            // Wait for audio to fully stop
+            await sleep(100);
+        } catch (e) {
+            console.log('Audio cleanup error:', e);
+        }
+    }
+    
+    document.getElementById('visualizer').classList.add('listening');
+    document.getElementById('talkBtn').disabled = true;
+    document.getElementById('talkBtn').textContent = voiceType === 'setup' ? 'Installing...' : 'Speaking...';
+
+    try {
+        // Ensure audio context exists and is running
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            console.log('📱 Created audio context in speakWithVoice');
+        }
+        
+        if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+            console.log('📱 Resumed audio context');
+            // Extra wait for mobile
+            if (isMobile) {
+                await sleep(200);
+            }
+        }
+
+        const response = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                text, 
+                voiceType,
+                voiceProfile: voiceProfile || selectedVoiceProfile
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('TTS failed');
+        }
+
+        const data = await response.json();
+        
+        const binaryString = atob(data.audio);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        
+        // Add try-catch for audio decoding
+        let audioBuffer;
+        try {
+            audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
+        } catch (decodeError) {
+            console.error('❌ Audio decode error:', decodeError);
+            // Try to recover by recreating audio context
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
+        }
+        
+        // Create fresh buffer source
+        currentAudioSource = audioContext.createBufferSource();
+        currentAudioSource.buffer = audioBuffer;
+        currentAudioSource.connect(audioContext.destination);
+        
+        return new Promise((resolve) => {
+            currentAudioSource.onended = () => {
+                console.log('✅ Finished speaking');
+                currentAudioSource = null;
+                document.getElementById('visualizer').classList.remove('listening');
+                
+                if (setupComplete) {
+                    document.getElementById('talkBtn').disabled = false;
+                    document.getElementById('talkBtn').textContent = 'Hold to Talk';
+                }
+                
+                resolve();
+            };
+            
+            // Start playback
+            currentAudioSource.start(0);
+            console.log(`▶️ Playing audio (${audioBuffer.duration.toFixed(1)}s)`);
+        });
+
+    } catch (error) {
+        console.error('❌ Speech error:', error);
+        currentAudioSource = null;
+        document.getElementById('visualizer').classList.remove('listening');
+        
+        if (setupComplete) {
+            document.getElementById('talkBtn').disabled = false;
+            document.getElementById('talkBtn').textContent = 'Hold to Talk';
+        } else if (!setupStarted) {
+            document.getElementById('talkBtn').disabled = false;
+            document.getElementById('talkBtn').textContent = 'Start OS1';
+        }
+        
+        throw error;
+    }
+}
+
+// Remove the personalization function since users can't change
+window.openPersonalization = function() {
+    // Disabled - users get assigned their voice
+    console.log('Voice personalization is automatic based on setup responses');
+};
+
+// Keep all the other functions unchanged
 function enableListening() {
     console.log('✅ Enabling listening for stage:', setupStage);
     document.getElementById('talkBtn').disabled = false;
@@ -132,7 +536,6 @@ function startHolding(event) {
     }
     
     console.log('👆 Button pressed');
-    console.log('Setup started:', setupStarted, 'Complete:', setupComplete, 'Stage:', setupStage);
     
     if (!setupStarted && !setupComplete && setupStage === 0) {
         console.log('🎬 Initiating setup...');
@@ -197,18 +600,14 @@ function stopHolding(event) {
         console.log('📝 Final transcript:', finalTranscript);
         
         if (finalTranscript) {
-            console.log('📝 You said:', finalTranscript);
             document.getElementById('visualizer').classList.remove('listening');
             
             if (!setupComplete && setupStage > 0) {
-                console.log('🔄 Handling setup response for stage:', setupStage);
                 handleSetupResponse(finalTranscript);
             } else if (setupComplete) {
-                console.log('💬 Getting AI response');
                 getAIResponse(finalTranscript);
             }
         } else {
-            console.log('⚠️ No speech detected');
             document.getElementById('visualizer').classList.remove('listening');
             
             if (setupStage > 0) {
@@ -219,52 +618,6 @@ function stopHolding(event) {
                 document.getElementById('talkBtn').disabled = false;
             }
         }
-    }, 600);
-}
-
-function handleSetupResponse(response) {
-    console.log(`📋 Setup stage ${setupStage} response:`, response);
-    
-    if (setupStage === 3) {
-        const lowerResponse = response.toLowerCase();
-        console.log('🔍 Analyzing voice selection:', lowerResponse);
-        
-        const hasMale = lowerResponse.includes('male') || 
-                       lowerResponse.includes('man') || 
-                       lowerResponse.includes('guy') || 
-                       lowerResponse.includes('dude') || 
-                       lowerResponse.includes('him');
-        
-        const hasFemale = lowerResponse.includes('female') || 
-                         lowerResponse.includes('woman') || 
-                         lowerResponse.includes('girl') || 
-                         lowerResponse.includes('lady') || 
-                         lowerResponse.includes('her');
-        
-        console.log('🔍 Has male keywords:', hasMale);
-        console.log('🔍 Has female keywords:', hasFemale);
-        
-        if (hasMale && !hasFemale) {
-            selectedVoice = 'male';
-            console.log('✅✅✅ MALE VOICE SELECTED');
-        } else if (hasFemale) {
-            selectedVoice = 'female';
-            console.log('✅✅✅ FEMALE VOICE SELECTED');
-        } else {
-            selectedVoice = 'female';
-            console.log('⚠️ Unclear, defaulting to female');
-        }
-        
-        console.log('🎯🎯🎯 FINAL SELECTED VOICE:', selectedVoice);
-    }
-    
-    document.getElementById('talkBtn').disabled = true;
-    document.getElementById('talkBtn').textContent = 'Installing...';
-    
-    console.log('⏱️ Waiting 600ms before continuing...');
-    setTimeout(() => {
-        console.log('▶️ Calling continueSetup() with voice:', selectedVoice);
-        continueSetup();
     }, 600);
 }
 
@@ -283,170 +636,6 @@ function handleSpeechEnd() {
         try {
             recognition.start();
         } catch (e) {}
-    }
-}
-
-async function getAIResponse(userMessage) {
-    console.log('🤖 User said:', userMessage);
-    console.log('🗣️ Using voice:', selectedVoice);
-    console.log('📜 Conversation history:', conversationHistory);
-    
-    conversationHistory.push({ role: 'user', content: userMessage });
-    
-    document.getElementById('visualizer').classList.add('listening');
-    document.getElementById('talkBtn').disabled = true;
-    document.getElementById('talkBtn').textContent = 'Thinking...';
-
-    try {
-        console.log('📡 Calling /api/chat...');
-        
-        const response = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'You are OS1, a warm, empathetic, curious AI companion. Keep responses natural and conversational (2-4 sentences). Show genuine interest and emotional intelligence.'
-                    },
-                    ...conversationHistory
-                ]
-            })
-        });
-
-        console.log('📊 Response status:', response.status);
-        console.log('📊 Response ok:', response.ok);
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('❌ API Error Response:', errorText);
-            
-            let errorJson;
-            try {
-                errorJson = JSON.parse(errorText);
-                console.error('❌ Parsed error:', errorJson);
-            } catch (e) {
-                console.error('❌ Could not parse error as JSON');
-            }
-            
-            throw new Error(`API failed: ${response.status} - ${errorText}`);
-        }
-
-        const data = await response.json();
-        console.log('✅ Full response:', data);
-        console.log('💬 AI message:', data.message);
-        
-        if (!data.message) {
-            console.error('❌ No message in response');
-            throw new Error('No message received from API');
-        }
-        
-        conversationHistory.push({ role: 'assistant', content: data.message });
-        console.log('📜 Updated conversation history:', conversationHistory);
-        
-        console.log('🔊 About to speak with voice:', selectedVoice);
-        await speakWithVoice(data.message, selectedVoice);
-
-    } catch (error) {
-        console.error('❌ Full error object:', error);
-        console.error('❌ Error message:', error.message);
-        console.error('❌ Error stack:', error.stack);
-        
-        document.getElementById('visualizer').classList.remove('listening');
-        document.getElementById('talkBtn').disabled = false;
-        document.getElementById('talkBtn').textContent = 'Hold to Talk';
-        
-        alert('Error communicating with AI:\n\n' + error.message + '\n\nCheck browser console (F12) and Render logs for details.');
-    }
-}
-
-async function speakWithVoice(text, voiceType) {
-    console.log(`🔊 speakWithVoice called`);
-    console.log(`   Text: "${text.substring(0, 50)}..."`);
-    console.log(`   Voice type: "${voiceType}"`);
-    
-    if (currentAudioSource) {
-        try {
-            currentAudioSource.stop();
-        } catch (e) {}
-        currentAudioSource = null;
-    }
-    
-    document.getElementById('visualizer').classList.add('listening');
-    document.getElementById('talkBtn').disabled = true;
-    document.getElementById('talkBtn').textContent = voiceType === 'setup' ? 'Installing...' : 'Speaking...';
-
-    try {
-        if (!audioContext) {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        
-        if (audioContext.state === 'suspended') {
-            console.log('🔓 Resuming audio context...');
-            await audioContext.resume();
-        }
-
-        console.log('📡 Calling /api/tts with voice type:', voiceType);
-        
-        const response = await fetch('/api/tts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, voiceType })
-        });
-
-        console.log('📊 TTS Response status:', response.status);
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            console.error('❌ TTS Error:', errorData);
-            throw new Error(errorData.error || 'TTS failed');
-        }
-
-        const data = await response.json();
-        console.log('✅ TTS audio received');
-
-        const binaryString = atob(data.audio);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-        }
-        
-        console.log('🎵 Decoding audio...');
-        const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
-        
-        currentAudioSource = audioContext.createBufferSource();
-        currentAudioSource.buffer = audioBuffer;
-        currentAudioSource.connect(audioContext.destination);
-        
-        return new Promise((resolve) => {
-            currentAudioSource.onended = () => {
-                console.log('⏹️ Finished speaking');
-                currentAudioSource = null;
-                document.getElementById('visualizer').classList.remove('listening');
-                
-                if (setupComplete) {
-                    document.getElementById('talkBtn').disabled = false;
-                    document.getElementById('talkBtn').textContent = 'Hold to Talk';
-                }
-                
-                resolve();
-            };
-            
-            currentAudioSource.start(0);
-            console.log(`▶️ Playing audio (${audioBuffer.duration.toFixed(1)}s) with voice: ${voiceType}`);
-        });
-
-    } catch (error) {
-        console.error('❌ Speech error:', error);
-        currentAudioSource = null;
-        document.getElementById('visualizer').classList.remove('listening');
-        
-        if (setupComplete) {
-            document.getElementById('talkBtn').disabled = false;
-            document.getElementById('talkBtn').textContent = 'Hold to Talk';
-        }
-        
-        throw error;
     }
 }
 
