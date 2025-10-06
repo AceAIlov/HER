@@ -20,20 +20,24 @@
         html, body {
             width: 100%;
             height: 100%;
+            min-height: -webkit-fill-available;
             overflow: hidden;
             position: fixed;
             -webkit-user-select: none;
             user-select: none;
+            overscroll-behavior: none;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
             background: #C94A3A;
             display: flex;
             justify-content: center;
             align-items: center;
             color: #F5F5DC;
             touch-action: manipulation;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
 
         .container {
@@ -41,19 +45,30 @@
             width: 100%;
             max-width: 600px;
             padding: 20px;
+            padding-bottom: max(40px, env(safe-area-inset-bottom, 20px));
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 100vh;
+            min-height: -webkit-fill-available;
+        }
+
+        .content-wrapper {
+            flex: 1;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 100vh;
+            width: 100%;
         }
 
         h1 {
-            font-size: clamp(2.5em, 10vw, 4em);
+            font-size: clamp(2em, 8vw, 4em);
             font-weight: 200;
             letter-spacing: clamp(6px, 2vw, 12px);
             color: #F5F5DC;
-            margin-bottom: clamp(20px, 6vh, 40px);
+            margin-bottom: clamp(15px, 3vh, 40px);
             text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
             opacity: 0;
             transition: opacity 0.5s ease;
@@ -62,7 +77,7 @@
         .subtitle {
             font-size: clamp(0.9em, 3vw, 1.1em);
             opacity: 0;
-            margin-bottom: clamp(30px, 8vh, 60px);
+            margin-bottom: clamp(20px, 3vh, 40px);
             font-weight: 300;
             letter-spacing: 2px;
             transition: opacity 0.5s ease;
@@ -70,9 +85,9 @@
 
         /* Infinity Animation Container */
         .infinity-container {
-            width: clamp(300px, 60vw, 400px);
-            height: clamp(150px, 30vw, 200px);
-            margin: clamp(30px, 8vh, 60px) auto;
+            width: clamp(240px, 55vw, 380px);
+            height: clamp(120px, 27vw, 190px);
+            margin: clamp(20px, 4vh, 50px) auto;
             position: relative;
             display: flex;
             align-items: center;
@@ -116,9 +131,9 @@
 
         /* Visualizer - hidden during setup, shown after */
         .visualizer {
-            width: clamp(180px, 50vw, 250px);
-            height: clamp(180px, 50vw, 250px);
-            margin: clamp(30px, 8vh, 60px) auto;
+            width: clamp(150px, 45vw, 240px);
+            height: clamp(150px, 45vw, 240px);
+            margin: clamp(20px, 4vh, 50px) auto;
             position: relative;
             opacity: 0;
             pointer-events: none;
@@ -158,10 +173,10 @@
 
         /* Progress Bar */
         .progress-container {
-            width: 60%;
+            width: 70%;
             max-width: 400px;
             margin: 0 auto;
-            margin-top: clamp(30px, 8vh, 60px);
+            margin-top: clamp(20px, 4vh, 50px);
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.5s ease;
@@ -198,40 +213,43 @@
         }
 
         .controls {
-            margin-top: clamp(30px, 8vh, 60px);
+            margin-top: auto;
+            padding-top: 20px;
+            padding-bottom: max(20px, env(safe-area-inset-bottom, 20px));
             width: 100%;
             display: flex;
             justify-content: center;
+            flex-shrink: 0;
         }
 
         button {
             background: rgba(245, 245, 220, 0.15);
             border: 3px solid #F5F5DC;
             color: #F5F5DC;
-            padding: clamp(20px, 5vw, 25px) clamp(40px, 12vw, 60px);
-            font-size: clamp(1.1em, 4vw, 1.3em);
-            border-radius: 60px;
+            padding: 18px 50px;
+            font-size: clamp(1em, 4vw, 1.2em);
+            border-radius: 50px;
             cursor: pointer;
             transition: all 0.2s;
             backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             font-weight: 600;
             user-select: none;
             -webkit-user-select: none;
             -webkit-tap-highlight-color: transparent;
             touch-action: manipulation;
-            min-width: 200px;
+            min-width: 180px;
+            max-width: 280px;
             text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-        }
-
-        button:hover {
-            background: rgba(245, 245, 220, 0.25);
-            transform: scale(1.05);
+            position: relative;
+            z-index: 10;
         }
 
         button:active, button.holding {
             background: rgba(245, 245, 220, 0.35);
             transform: scale(0.95);
             border-color: #FFF8DC;
+            transition: all 0.1s;
         }
 
         button:disabled {
@@ -247,41 +265,96 @@
             opacity: 0.6;
             cursor: pointer;
             transition: opacity 0.3s;
-        }
-
-        .personalization-hint:hover {
-            opacity: 1;
+            display: none;
         }
 
         @media (orientation: landscape) and (max-height: 600px) {
-            .container { padding: 10px; }
-            h1 { font-size: clamp(2em, 8vw, 3em); margin-bottom: 20px; }
+            .container { 
+                padding: 10px;
+                padding-bottom: max(15px, env(safe-area-inset-bottom));
+            }
+            h1 { font-size: clamp(1.8em, 6vw, 2.5em); margin-bottom: 10px; }
             .infinity-container {
-                width: clamp(200px, 40vw, 300px);
-                height: clamp(100px, 20vw, 150px);
-                margin: 20px auto;
+                width: clamp(180px, 35vw, 260px);
+                height: clamp(90px, 17vw, 130px);
+                margin: 15px auto;
             }
             .visualizer {
-                width: clamp(120px, 30vw, 180px);
-                height: clamp(120px, 30vw, 180px);
-                margin: 20px auto;
+                width: clamp(100px, 25vw, 150px);
+                height: clamp(100px, 25vw, 150px);
+                margin: 15px auto;
             }
-            .controls { margin-top: 20px; }
-            .progress-container { margin-top: 20px; }
+            .controls { 
+                margin-top: 10px;
+                padding-top: 10px;
+                padding-bottom: max(10px, env(safe-area-inset-bottom));
+            }
+            .progress-container { margin-top: 15px; }
+            button {
+                padding: 12px 35px;
+                min-width: 150px;
+            }
         }
 
         @media (max-width: 375px) {
-            h1 { font-size: 2.5em; letter-spacing: 6px; }
+            h1 { font-size: 2em; letter-spacing: 4px; }
             .infinity-container {
-                width: 260px;
-                height: 130px;
+                width: 220px;
+                height: 110px;
+            }
+            .visualizer {
+                width: 140px;
+                height: 140px;
+            }
+            button {
+                padding: 16px 40px;
+                font-size: 1em;
             }
         }
 
+        /* Extra small phones */
+        @media (max-height: 667px) {
+            h1 { font-size: clamp(1.8em, 7vw, 2.5em); margin-bottom: 10px; }
+            .subtitle { margin-bottom: 15px; }
+            .infinity-container {
+                width: clamp(200px, 50vw, 300px);
+                height: clamp(100px, 25vw, 150px);
+                margin: 15px auto;
+            }
+            .visualizer {
+                width: clamp(130px, 40vw, 200px);
+                height: clamp(130px, 40vw, 200px);
+                margin: 15px auto;
+            }
+            .progress-container { margin-top: 15px; }
+        }
+
+        /* iOS-specific fixes */
+        @supports (-webkit-touch-callout: none) {
+            body {
+                height: -webkit-fill-available;
+            }
+            .container {
+                height: -webkit-fill-available;
+            }
+        }
+
+        /* Prevent pull-to-refresh */
         html {
             overflow: hidden;
             position: fixed;
             width: 100%;
+            overscroll-behavior-y: none;
+        }
+
+        /* Improve touch responsiveness */
+        * {
+            -webkit-touch-callout: none;
+        }
+
+        button {
+            -webkit-appearance: none;
+            appearance: none;
         }
     </style>
 </head>
@@ -291,44 +364,46 @@
     </div>
     
     <div class="container">
-        <h1 id="aiName"></h1>
-        <div class="subtitle" id="aiSubtitle"></div>
-        
-        <!-- Infinity Animation (shown during setup) -->
-        <div class="infinity-container" id="infinityContainer">
-            <svg class="infinity-svg" viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
-                <path class="infinity-path" 
-                      d="M 30,50 C 30,25 45,15 60,15 C 75,15 85,25 100,50 C 115,75 125,85 140,85 C 155,85 170,75 170,50 C 170,25 155,15 140,15 C 125,15 115,25 100,50 C 85,75 75,85 60,85 C 45,85 30,75 30,50 Z" 
-                      fill="none" 
-                      stroke="rgba(245, 245, 220, 0.8)" 
-                      stroke-linecap="round"/>
-                
-                <circle class="infinity-dot" r="5" fill="#F5F5DC">
-                    <animateMotion dur="3s" repeatCount="indefinite">
-                        <mpath href="#infinityPath"/>
-                    </animateMotion>
-                </circle>
-                
-                <path id="infinityPath" 
-                      d="M 30,50 C 30,25 45,15 60,15 C 75,15 85,25 100,50 C 115,75 125,85 140,85 C 155,85 170,75 170,50 C 170,25 155,15 140,15 C 125,15 115,25 100,50 C 85,75 75,85 60,85 C 45,85 30,75 30,50 Z" 
-                      fill="none" 
-                      stroke="none"/>
-            </svg>
-        </div>
-        
-        <!-- Regular visualizer (shown after setup completes) -->
-        <div class="visualizer" id="visualizer">
-            <div class="pulse"></div>
-            <div class="pulse"></div>
-            <div class="pulse"></div>
-        </div>
-
-        <!-- Progress Bar -->
-        <div class="progress-container" id="progressContainer">
-            <div class="progress-bar-bg">
-                <div class="progress-bar-fill" id="progressBar"></div>
+        <div class="content-wrapper">
+            <h1 id="aiName"></h1>
+            <div class="subtitle" id="aiSubtitle"></div>
+            
+            <!-- Infinity Animation (shown during setup) -->
+            <div class="infinity-container" id="infinityContainer">
+                <svg class="infinity-svg" viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+                    <path class="infinity-path" 
+                          d="M 30,50 C 30,25 45,15 60,15 C 75,15 85,25 100,50 C 115,75 125,85 140,85 C 155,85 170,75 170,50 C 170,25 155,15 140,15 C 125,15 115,25 100,50 C 85,75 75,85 60,85 C 45,85 30,75 30,50 Z" 
+                          fill="none" 
+                          stroke="rgba(245, 245, 220, 0.8)" 
+                          stroke-linecap="round"/>
+                    
+                    <circle class="infinity-dot" r="5" fill="#F5F5DC">
+                        <animateMotion dur="3s" repeatCount="indefinite">
+                            <mpath href="#infinityPath"/>
+                        </animateMotion>
+                    </circle>
+                    
+                    <path id="infinityPath" 
+                          d="M 30,50 C 30,25 45,15 60,15 C 75,15 85,25 100,50 C 115,75 125,85 140,85 C 155,85 170,75 170,50 C 170,25 155,15 140,15 C 125,15 115,25 100,50 C 85,75 75,85 60,85 C 45,85 30,75 30,50 Z" 
+                          fill="none" 
+                          stroke="none"/>
+                </svg>
             </div>
-            <div class="progress-text" id="progressText">Initializing OS1...</div>
+            
+            <!-- Regular visualizer (shown after setup completes) -->
+            <div class="visualizer" id="visualizer">
+                <div class="pulse"></div>
+                <div class="pulse"></div>
+                <div class="pulse"></div>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="progress-container" id="progressContainer">
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="progressBar"></div>
+                </div>
+                <div class="progress-text" id="progressText">Initializing OS1...</div>
+            </div>
         </div>
 
         <div class="controls">
