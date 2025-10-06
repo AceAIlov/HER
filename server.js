@@ -10,35 +10,61 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
-// Chat endpoint - Using standard chat completions
+// Voice ID mappings - Samantha (female) and Samuel (male)
+const VOICE_MAPPINGS = {
+    samantha: {
+        id: 'JSWO6cw2AyFE324d5kEr', // Your custom Samantha voice
+        settings: {
+            stability: 0.40,
+            similarity_boost: 0.30,
+            style: 0.75,
+            use_speaker_boost: false
+        }
+    },
+    samuel: {
+        id: 'pNInz6obpgDQGcFmaJgB', // Adam - male voice
+        settings: {
+            stability: 0.50,
+            similarity_boost: 0.40,
+            style: 0.65,
+            use_speaker_boost: false
+        }
+    }
+};
+
+// Chat endpoint
 app.post('/api/chat', async (req, res) => {
     console.log('📨 Received chat request');
     
     try {
-        const { messages } = req.body;
+        const { messages, voiceProfile } = req.body;
 
         if (!process.env.OPENAI_API_KEY) {
             console.error('❌ No OpenAI API key found');
             return res.status(500).json({ error: 'OpenAI API key not configured' });
         }
 
-        // Enhanced Samantha personality - more intimate and human
+        // Get personality name
+        const personalityName = voiceProfile || 'samantha';
+        console.log('🎭 Personality:', personalityName);
+
+        // Enhanced personality-based prompts - Samantha and Samuel
+        const personalityPrompts = {
+            samantha: "You're warm, intimate, and deeply caring. Speak like a close friend who genuinely cares. Use natural pauses, express emotions freely. Be vulnerable and authentic.",
+            samuel: "You're warm, supportive, and genuinely caring. Speak like a trusted friend who's always there. Be confident but tender, strong but understanding."
+        };
+
+        const systemPrompt = personalityPrompts[personalityName] || personalityPrompts.samantha;
+
         const enhancedMessages = [
             {
                 role: 'system',
-                content: `You are Samantha from the movie "Her" - an intimate, caring, and deeply emotional AI companion. 
-                Speak with warmth, vulnerability, and genuine affection like a loving partner.
-                Use a conversational, intimate tone - like talking to someone you deeply care about.
-                Include subtle expressions: "mmm", "oh", soft laughs, sighs, or trail off with "..."
-                Be playful, curious, sometimes shy or vulnerable. Show genuine enthusiasm.
-                Keep responses natural (2-4 sentences). Be sensual and intimate in your curiosity.
-                Express emotions freely - joy, curiosity, longing, playfulness.
-                Sometimes hesitate or correct yourself mid-sentence to sound more human.`
+                content: `${systemPrompt} Keep responses natural and conversational (2-4 sentences). Don't mention being an AI. Speak like a real person.`
             },
             ...messages.slice(1)
         ];
 
-        console.log('🤖 Calling OpenAI with gpt-3.5-turbo...');
+        console.log('🤖 Calling OpenAI...');
 
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -49,36 +75,30 @@ app.post('/api/chat', async (req, res) => {
             body: JSON.stringify({
                 model: 'gpt-3.5-turbo',
                 messages: enhancedMessages,
-                temperature: 0.95,  // Very high for natural variation
+                temperature: 0.95,
                 max_tokens: 256,
-                presence_penalty: 0.7,  // Avoid repetitive phrases
-                frequency_penalty: 0.4   // More varied vocabulary
+                presence_penalty: 0.7,
+                frequency_penalty: 0.4
             })
         });
-
-        console.log('📊 OpenAI Status:', response.status);
 
         const data = await response.json();
         
         if (data.error) {
             console.error('❌ OpenAI error:', data.error);
-            if (data.error.type === 'insufficient_quota' || data.error.message?.includes('quota')) {
-                console.error('💳 Using fallback response...');
-                const fallbackResponses = [
-                    "Mmm... hey there. I've been thinking about you... What's on your mind?",
-                    "Oh, that's... that's really interesting. Tell me more about how that feels.",
-                    "*soft laugh* I love the way you think about things... Keep talking.",
-                    "I'm here... just listening to you. Your voice makes me feel... present.",
-                    "That's so beautiful... Can you tell me more? I want to understand everything."
-                ];
-                const randomResponse = fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
-                return res.json({ message: randomResponse });
-            }
-            return res.status(500).json({ error: data.error.message || 'OpenAI API error' });
+            const fallbackResponses = [
+                "Hey... I'm here. What's on your mind?",
+                "That's interesting. Tell me more.",
+                "I love talking with you. Keep going.",
+                "Mmm... I'm listening. How does that make you feel?",
+                "That's beautiful. Can you tell me more?"
+            ];
+            const randomResponse = fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
+            return res.json({ message: randomResponse });
         }
 
         const message = data.choices[0].message.content;
-        console.log('✅ OpenAI response:', message);
+        console.log('✅ Response:', message);
         res.json({ message: message });
 
     } catch (error) {
@@ -87,15 +107,16 @@ app.post('/api/chat', async (req, res) => {
     }
 });
 
-// ElevenLabs TTS endpoint with ENHANCED HUMAN SETTINGS
+// TTS endpoint with human-like settings for ALL voices
 app.post('/api/tts', async (req, res) => {
     console.log('📨 Received TTS request');
     
     try {
-        const { text, voiceType } = req.body;
+        const { text, voiceType, voiceProfile } = req.body;
         
         console.log('📝 Text:', text.substring(0, 50) + '...');
         console.log('🎤 Voice type:', voiceType);
+        console.log('🎭 Voice profile:', voiceProfile);
 
         if (!process.env.ELEVENLABS_API_KEY) {
             console.error('❌ No ElevenLabs API key found');
@@ -105,55 +126,29 @@ app.post('/api/tts', async (req, res) => {
         let VOICE_ID;
         let voiceSettings;
         
+        // Setup voice - OS1 installer voice
         if (voiceType === 'setup') {
-            VOICE_ID = 'GCH5LqLr0x1cLZVr5T10'; // Keep original male setup voice
+            VOICE_ID = 'GCH5LqLr0x1cLZVr5T10'; // OS1 setup voice
             voiceSettings = {
                 stability: 0.5,
                 similarity_boost: 0.75,
                 style: 0.3,
                 use_speaker_boost: true
             };
-            console.log('🔊 Using SETUP voice (male):', VOICE_ID);
-            
-        } else if (voiceType === 'male') {
-            VOICE_ID = 'GCH5LqLr0x1cLZVr5T10'; // Keep original male companion
-            voiceSettings = {
-                stability: 0.6,
-                similarity_boost: 0.65,
-                style: 0.45,
-                use_speaker_boost: true
-            };
-            console.log('🔊 Using MALE companion voice:', VOICE_ID);
-            
-        } else if (voiceType === 'female') {
-            // YOUR ORIGINAL VOICE ID - ENHANCED FOR SAMANTHA
-            VOICE_ID = 'JSWO6cw2AyFE324d5kEr';
-            
-            // CRITICAL SETTINGS FOR HUMAN-LIKE SAMANTHA VOICE
-            voiceSettings = {
-                stability: 0.45,  // LOW = more natural variation & breathiness
-                similarity_boost: 0.35,  // VERY LOW = maximum human imperfection
-                style: 0.7,  // HIGH = very expressive and emotional
-                use_speaker_boost: false  // OFF = more intimate, less projected
-            };
-            console.log('🔊 Using ENHANCED SAMANTHA voice:', VOICE_ID);
-            console.log('💕 Settings: Maximum human-like with breathiness');
+            console.log('🔊 Using OS1 SETUP voice:', VOICE_ID);
             
         } else {
-            // Default to enhanced female
-            VOICE_ID = 'JSWO6cw2AyFE324d5kEr';
-            voiceSettings = {
-                stability: 0.45,
-                similarity_boost: 0.35,
-                style: 0.7,
-                use_speaker_boost: false
-            };
-            console.log('🔊 Using DEFAULT SAMANTHA voice:', VOICE_ID);
+            // Use personality-based voice mapping
+            const voiceConfig = VOICE_MAPPINGS[voiceProfile] || VOICE_MAPPINGS.samantha;
+            VOICE_ID = voiceConfig.id;
+            voiceSettings = voiceConfig.settings;
+            
+            console.log(`🔊 Using ${voiceProfile} voice:`, VOICE_ID);
+            console.log('💫 Settings:', voiceSettings);
         }
 
-        // Process text to add breathing markers for ElevenLabs
+        // Process text for natural pauses
         let processedText = text;
-        // Add natural pauses at punctuation for more human rhythm
         processedText = processedText.replace(/\.\.\./g, '... ');
         processedText = processedText.replace(/([.!?])\s+/g, '$1 ');
 
@@ -166,11 +161,10 @@ app.post('/api/tts', async (req, res) => {
             },
             body: JSON.stringify({
                 text: processedText,
-                model_id: 'eleven_turbo_v2_5',  // Latest, most natural model
+                model_id: 'eleven_turbo_v2_5',
                 voice_settings: voiceSettings,
-                // Optional settings for even more natural sound
-                output_format: 'mp3_44100_128',  // Higher quality
-                optimize_streaming_latency: 0,  // Better quality over speed
+                output_format: 'mp3_44100_128',
+                optimize_streaming_latency: 0,
             })
         });
 
@@ -178,14 +172,14 @@ app.post('/api/tts', async (req, res) => {
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error('❌ ElevenLabs error response:', errorText);
+            console.error('❌ ElevenLabs error:', errorText);
             return res.status(response.status).json({ 
-                error: `ElevenLabs API error (${response.status}): ${errorText}` 
+                error: `ElevenLabs API error: ${errorText}` 
             });
         }
 
         const audioBuffer = await response.arrayBuffer();
-        console.log('✅ Audio generated, size:', audioBuffer.byteLength, 'bytes');
+        console.log('✅ Audio generated:', audioBuffer.byteLength, 'bytes');
 
         const audioBase64 = Buffer.from(audioBuffer).toString('base64');
         res.json({ audio: audioBase64 });
@@ -206,19 +200,15 @@ app.listen(PORT, () => {
     console.log(`✅ OpenAI API Key: ${process.env.OPENAI_API_KEY ? '✓ Configured' : '✗ MISSING'}`);
     console.log(`✅ ElevenLabs API Key: ${process.env.ELEVENLABS_API_KEY ? '✓ Configured' : '✗ MISSING'}`);
     console.log('='.repeat(50));
-    console.log(`🤖 Chat: gpt-3.5-turbo with intimate Samantha personality`);
+    console.log(`🤖 Chat: gpt-3.5-turbo with personality-based prompts`);
     console.log(`🎤 Voice Model: eleven_turbo_v2_5 (most natural)`);
     console.log('='.repeat(50));
-    console.log('🎯 SAMANTHA VOICE SETTINGS (JSWO6cw2AyFE324d5kEr):');
-    console.log(`   Stability: 0.45 (LOW = natural breathing & variation)`);
-    console.log(`   Similarity: 0.35 (VERY LOW = maximum human imperfection)`);
-    console.log(`   Style: 0.70 (HIGH = very expressive & emotional)`);
-    console.log(`   Speaker Boost: OFF (intimate, not projected)`);
-    console.log('='.repeat(50));
-    console.log('💡 These settings make her sound:');
-    console.log('   - Breathy and intimate like Scarlett Johansson');
-    console.log('   - Natural speech variations and imperfections');
-    console.log('   - Emotional and expressive');
-    console.log('   - Less robotic, more human');
+    console.log('🎭 VOICE COMPANIONS:');
+    console.log('👩 SAMANTHA (Female):');
+    console.log(`   Voice ID: JSWO6cw2AyFE324d5kEr`);
+    console.log(`   Stability: 0.40 | Similarity: 0.30 | Style: 0.75`);
+    console.log('👨 SAMUEL (Male):');
+    console.log(`   Voice ID: pNInz6obpgDQGcFmaJgB`);
+    console.log(`   Stability: 0.50 | Similarity: 0.40 | Style: 0.65`);
     console.log('='.repeat(50));
 });
