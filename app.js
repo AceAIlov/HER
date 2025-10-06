@@ -185,11 +185,18 @@ async function runSetup() {
         enableListening();
     } catch (error) {
         console.error('❌ Setup failed:', error);
+        
+        // Reset everything on error
         hideInfinityVideo();
         setupStarted = false;
         setupStage = 0;
+        isProcessing = false;
+        
         document.getElementById('talkBtn').disabled = false;
         document.getElementById('talkBtn').textContent = 'Start OS1';
+        
+        // Show user-friendly error
+        alert('Unable to connect to voice service. Please check your API keys and try again.');
     }
 }
 
