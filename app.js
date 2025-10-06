@@ -88,10 +88,11 @@ function analyzePersonality() {
     // Check voice preference from user's answer
     const voicePref = userResponses.voicePreference?.toLowerCase() || '';
     
-    if (voicePref.includes('male') || voicePref.includes('man')) {
+    if (voicePref.includes('male') || voicePref.includes('man') || voicePref.includes('boy')) {
         console.log('✅ Assigned voice: Samuel (male)');
         return 'samuel';
     } else {
+        // Default to Samantha for female or any other response
         console.log('✅ Assigned voice: Samantha (female)');
         return 'samantha';
     }
@@ -335,7 +336,7 @@ async function speakWithVoice(text, voiceType, voiceProfile = null) {
     // Play notification sound before AI speaks (only after setup is complete)
     if (setupComplete && voiceType !== 'setup') {
         playNotificationSound();
-        await sleep(400); // Wait for notification sound to finish
+        await sleep(400);
     }
     
     document.getElementById('visualizer').classList.add('listening');
@@ -349,11 +350,12 @@ async function speakWithVoice(text, voiceType, voiceProfile = null) {
             console.log('📱 Created audio context in speakWithVoice');
         }
         
+        // Critical for iOS - always resume before playing
         if (audioContext.state === 'suspended') {
             await audioContext.resume();
             console.log('📱 Resumed audio context');
             if (isMobile) {
-                await sleep(300);
+                await sleep(500);
             }
         }
 
@@ -372,6 +374,7 @@ async function speakWithVoice(text, voiceType, voiceProfile = null) {
         }
 
         const data = await response.json();
+        console.log('✅ Received audio data');
         
         const binaryString = atob(data.audio);
         const bytes = new Uint8Array(binaryString.length);
@@ -379,13 +382,21 @@ async function speakWithVoice(text, voiceType, voiceProfile = null) {
             bytes[i] = binaryString.charCodeAt(i);
         }
         
+        console.log('📦 Decoding audio...');
         let audioBuffer;
         try {
-            audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
+            // Make a copy of the buffer for iOS
+            const audioData = bytes.buffer.slice(0);
+            audioBuffer = await audioContext.decodeAudioData(audioData);
+            console.log('✅ Audio decoded successfully');
         } catch (decodeError) {
             console.error('❌ Audio decode error:', decodeError);
+            // Try recreating context
+            audioContext.close();
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
+            await audioContext.resume();
+            const audioData = bytes.buffer.slice(0);
+            audioBuffer = await audioContext.decodeAudioData(audioData);
         }
         
         // Create fresh buffer source
